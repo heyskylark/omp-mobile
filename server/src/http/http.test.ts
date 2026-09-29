@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { ServerMessage, SessionSnapshot } from "@omp-mobile/protocol";
+import type { AdminStatus, ServerMessage, SessionSnapshot } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
 import { createDeviceStore } from "../store/devices.ts";
@@ -155,6 +155,25 @@ describe("HTTP API", () => {
 		).toBe(404);
 	});
 
+	test("reports missing APNs through structured status without duplicating it as a problem", async () => {
+		const { options } = await fixture();
+		const handler = createHttpHandler(
+			options,
+			"loopback",
+			() => "http://mac:8787",
+			() => ["Tailscale is disconnected"],
+		);
+		const response = await handler(
+			new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }),
+		);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			apnsConfigured: false,
+			problems: ["Tailscale is disconnected"],
+		});
+	});
+
 	test("pairing route consumes a code once", async () => {
 		const { options, devices } = await fixture();
 		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
@@ -186,6 +205,41 @@ describe("HTTP API", () => {
 		expect(devices.list().map((device) => device.id)).toEqual([paired.deviceId]);
 		expect(await devices.authenticate(token)).toBeNull();
 		expect((await devices.authenticate(paired.token))?.id).toBe(paired.deviceId);
+	});
+
+	test("admin status reports which device consumed a pairing code", async () => {
+		const { options } = await fixture();
+		const loopback = createHttpHandler(options, "loopback", () => "http://mac:8787");
+		const pairingResponse = await loopback(
+			new Request("http://mac/admin/pairing", {
+				method: "POST",
+				headers: { authorization: "Bearer admin" },
+			}),
+		);
+		const pairing = (await pairingResponse.json()) as { id: string; code: string };
+		const app = createHttpHandler(options, "app", () => "http://mac:8787");
+		expect(
+			(
+				await app(
+					new Request("http://mac/v1/pair", {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ code: pairing.code, deviceName: "New Phone" }),
+					}),
+				)
+			).status,
+		).toBe(200);
+
+		const status = await loopback(
+			new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }),
+		);
+		const body = (await status.json()) as AdminStatus;
+		expect(body.pairings).toContainEqual(
+			expect.objectContaining({
+				id: pairing.id,
+				consumedBy: expect.objectContaining({ name: "New Phone" }),
+			}),
+		);
 	});
 
 	test("WebSocket sends hello and fans out subscribed session messages", async () => {

@@ -18,8 +18,20 @@ describe("device store", () => {
 		const store = createDeviceStore(path, () => now);
 		await store.load();
 		const pairing = store.createPairing();
+		expect(store.listPairings()).toEqual([{ id: pairing.id, expiresAt: pairing.expiresAt }]);
 		const paired = await store.pair(pairing.code, "Phone");
 		expect(paired).not.toBeNull();
+		expect(store.listPairings()).toEqual([
+			{
+				id: pairing.id,
+				expiresAt: pairing.expiresAt,
+				consumedBy: {
+					deviceId: paired!.device.id,
+					name: "Phone",
+					pairedAt: paired!.device.pairedAt,
+				},
+			},
+		]);
 		expect(await store.pair(pairing.code, "Other")).toBeNull();
 		expect((await store.authenticate(paired!.token))?.id).toBe(paired!.device.id);
 		expect((await stat(path)).mode & 0o777).toBe(0o600);

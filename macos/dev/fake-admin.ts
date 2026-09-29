@@ -52,6 +52,7 @@ const server = Bun.serve({
 				ompVersion: "18.4.3",
 				apnsConfigured: false,
 				devices,
+				pairings: [],
 				live: { terminal: 2, server: 1, pending: 2 },
 				problems: ["Tailscale is disconnected"],
 			});
@@ -61,6 +62,7 @@ const server = Bun.serve({
 			pairingNumber += 1;
 			const code = `OMP${String(pairingNumber).padStart(5, "0")}`;
 			return json({
+				id: `pairing-${pairingNumber}`,
 				code,
 				expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
 				pairingUrl: `ompmobile://pair?v=1&url=${encodeURIComponent(`http://fake-mac.tailnet.ts.net:${port}`)}&code=${code}&name=${encodeURIComponent("Skylark’s MacBook Pro")}`,

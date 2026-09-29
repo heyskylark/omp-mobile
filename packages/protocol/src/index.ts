@@ -236,11 +236,17 @@ export interface AdminStatus {
 	ompVersion: string | null;
 	apnsConfigured: boolean;
 	devices: Array<{ id: string; name: string; pairedAt: ISODate; lastSeenAt?: ISODate }>;
+	pairings: Array<{
+		id: string;
+		expiresAt: ISODate;
+		consumedBy?: { deviceId: string; name: string; pairedAt: ISODate };
+	}>;
 	live: { server: number; terminal: number; pending: number };
 	problems: string[];
 }
 
 export interface AdminPairing {
+	id: string;
 	code: string;
 	expiresAt: ISODate;
 	pairingUrl: string;
