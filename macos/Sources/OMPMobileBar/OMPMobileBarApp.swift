@@ -8,7 +8,11 @@ struct OMPMobileBarApp: App {
         MenuBarExtra {
             MenuContentView(model: model)
         } label: {
-            Label("OMP Mobile", systemImage: model.serverState.symbolName)
+            Label {
+                Text("OMP Mobile")
+            } icon: {
+                Image(nsImage: model.serverState.menuBarMark.image)
+            }
         }
         .menuBarExtraStyle(.window)
     }
