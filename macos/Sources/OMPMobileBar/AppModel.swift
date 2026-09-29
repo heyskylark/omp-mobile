@@ -8,6 +8,7 @@ final class AppModel: ObservableObject {
         case idle
         case loading
         case ready(AdminPairing)
+        case connected(String)
         case failed(String)
     }
 
@@ -41,7 +42,12 @@ final class AppModel: ObservableObject {
 
     func refresh() async {
         do {
-            serverState = .online(try await client.status())
+            let status = try await client.status()
+            serverState = .online(status)
+            if case .ready(let pairing) = pairingState,
+               let consumed = status.pairings.first(where: { $0.id == pairing.id })?.consumedBy {
+                pairingState = .connected(consumed.name)
+            }
         } catch {
             serverState = .offline(error.localizedDescription)
         }
