@@ -43,6 +43,26 @@ struct PairingView: View {
             Spacer()
         case .ready(let pairing):
             readyContent(pairing)
+        case .connected(let deviceName):
+            connectedContent(deviceName)
+        }
+    }
+
+    private func connectedContent(_ deviceName: String) -> some View {
+        VStack(spacing: 20) {
+            Spacer()
+            ContentUnavailableView(
+                "Connected \(deviceName)",
+                systemImage: "checkmark.circle.fill",
+                description: Text("Your device is ready to use with OMP.")
+            )
+            Button {
+                model.requestPairing()
+            } label: {
+                Label("New code", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
         }
     }
 

@@ -21,6 +21,18 @@ struct AdminStatus: Decodable, Sendable {
         let lastSeenAt: String?
     }
 
+    struct Pairing: Decodable, Sendable {
+        struct ConsumedBy: Decodable, Sendable {
+            let deviceId: String
+            let name: String
+            let pairedAt: String
+        }
+
+        let id: String
+        let expiresAt: String
+        let consumedBy: ConsumedBy?
+    }
+
     struct Live: Decodable, Sendable {
         let server: Int
         let terminal: Int
@@ -32,16 +44,19 @@ struct AdminStatus: Decodable, Sendable {
     let ompVersion: String?
     let apnsConfigured: Bool
     let devices: [Device]
+    let pairings: [Pairing]
     let live: Live
     let problems: [String]
 }
 
 struct AdminPairing: Decodable, Sendable {
+    let id: String
     let code: String
     let expiration: Date
     let pairingUrl: String
 
     private enum CodingKeys: String, CodingKey {
+        case id
         case code
         case expiresAt
         case pairingUrl
@@ -49,6 +64,7 @@ struct AdminPairing: Decodable, Sendable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
         code = try values.decode(String.self, forKey: .code)
         pairingUrl = try values.decode(String.self, forKey: .pairingUrl)
         let rawExpiration = try values.decode(String.self, forKey: .expiresAt)

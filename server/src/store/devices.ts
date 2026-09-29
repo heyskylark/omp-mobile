@@ -26,8 +26,15 @@ export interface StoredDevice {
 }
 
 export interface PairingCode {
+	id: string;
 	code: string;
 	expiresAt: string;
+}
+
+export interface PairingStatus {
+	id: string;
+	expiresAt: string;
+	consumedBy?: { deviceId: string; name: string; pairedAt: string };
 }
 
 export interface PairedDevice {
@@ -38,6 +45,7 @@ export interface PairedDevice {
 export interface DeviceStore {
 	load(): Promise<void>;
 	list(): StoredDevice[];
+	listPairings(): PairingStatus[];
 	createPairing(): PairingCode;
 	pair(code: string, name: string, push?: StoredDevice["push"]): Promise<PairedDevice | null>;
 	authenticate(token: string): Promise<StoredDevice | null>;
@@ -47,8 +55,10 @@ export interface DeviceStore {
 }
 
 interface PendingCode {
+	id: string;
 	digest: Buffer;
 	expiresAt: number;
+	consumedBy?: PairingStatus["consumedBy"];
 }
 
 const PAIRING_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -62,6 +72,16 @@ export function createDeviceStore(path: string, now: () => number = Date.now): D
 	const devices = new Map<string, StoredDevice>();
 	const pairingCodes = new Map<string, PendingCode>();
 	let writeQueue = Promise.resolve();
+
+	const prunePairings = () => {
+		const timestamp = now();
+		for (const [id, pairing] of pairingCodes) {
+			const retainUntil = pairing.consumedBy
+				? Date.parse(pairing.consumedBy.pairedAt) + PAIRING_TTL_MS
+				: pairing.expiresAt;
+			if (retainUntil <= timestamp) pairingCodes.delete(id);
+		}
+	};
 
 	const persist = () => {
 		const snapshot = JSON.stringify({ devices: [...devices.values()] }, null, 2) + "\n";
@@ -89,25 +109,34 @@ export function createDeviceStore(path: string, now: () => number = Date.now): D
 		list() {
 			return [...devices.values()].map((device) => structuredClone(device));
 		},
+		listPairings() {
+			prunePairings();
+			return [...pairingCodes.values()].map(({ id, expiresAt, consumedBy }) => ({
+				id,
+				expiresAt: new Date(expiresAt).toISOString(),
+				...(consumedBy ? { consumedBy: structuredClone(consumedBy) } : {}),
+			}));
+		},
 		createPairing() {
-			for (const [existing, pending] of pairingCodes) {
-				if (pending.expiresAt <= now()) pairingCodes.delete(existing);
-			}
+			prunePairings();
 			let code = "";
 			const bytes = randomBytes(8);
 			for (const byte of bytes) code += PAIRING_ALPHABET.charAt(byte % PAIRING_ALPHABET.length);
+			const id = randomUUID();
 			const expiresAt = now() + PAIRING_TTL_MS;
-			pairingCodes.set(code, { digest: createHash("sha256").update(code).digest(), expiresAt });
-			return { code, expiresAt: new Date(expiresAt).toISOString() };
+			pairingCodes.set(id, { id, digest: createHash("sha256").update(code).digest(), expiresAt });
+			return { id, code, expiresAt: new Date(expiresAt).toISOString() };
 		},
 		async pair(code, name, push) {
+			prunePairings();
 			const candidate = createHash("sha256").update(code).digest();
-			let matchedKey: string | undefined;
-			for (const [key, pending] of pairingCodes) {
-				if (timingSafeEqual(candidate, pending.digest) && pending.expiresAt > now()) matchedKey = key;
+			let matched: PendingCode | undefined;
+			for (const pending of pairingCodes.values()) {
+				if (!pending.consumedBy && timingSafeEqual(candidate, pending.digest) && pending.expiresAt > now()) {
+					matched = pending;
+				}
 			}
-			if (!matchedKey) return null;
-			pairingCodes.delete(matchedKey);
+			if (!matched) return null;
 			const token = randomBytes(32).toString("base64url");
 			const pairedAt = new Date(now()).toISOString();
 			const device: StoredDevice = {
@@ -120,6 +149,7 @@ export function createDeviceStore(path: string, now: () => number = Date.now): D
 				lastSeenAt: pairedAt,
 			};
 			devices.set(device.id, device);
+			matched.consumedBy = { deviceId: device.id, name: device.name, pairedAt };
 			await persist();
 			return { device: structuredClone(device), token };
 		},

@@ -119,7 +119,7 @@ Restart the server after you change the file: choose **Restart server** in the m
 1. Click the OMP Mobile icon in the menu bar, then choose **Connect a device…**.
 2. In the app, tap **Add computer** and scan the QR code.
 
-A pairing code works once and expires after 10 minutes. You can also copy the pairing link on the Mac and paste it into the app. Remove a phone from the menu bar under **Paired devices**.
+A pairing code works once and expires after 10 minutes. After a phone uses it, the Mac confirms which device connected; choose **New code** to connect another device. You can also copy the pairing link on the Mac and paste it into the app. Remove a phone from the menu bar under **Paired devices**.
 
 ## Get the app on your iPhone with TestFlight
 
