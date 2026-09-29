@@ -1,0 +1,17 @@
+{
+  "aps": {
+    "alert": {
+      "title": "OMP",
+      "body": "New activity"
+    },
+    "mutable-content": 1,
+    "category": "OMP_APPROVAL",
+    "thread-id": "test-session",
+    "sound": "default"
+  },
+  "m": "test-machine",
+  "e": {
+    "n": "oKGio6Slpqeoqaqr",
+    "c": "nToKD3/6Lp0PBOS7bhSllxSOYzLm0jEYsWNH5RfCG2TwWmWMylEgVDDyTawrQKGNImgyZRG1aQ0oMWV8iFLs3sDZ9w5T0Y2PmqubOrXsuN++f4bNq7X8CI8WSvPe9G+4redK32bJ4Onn+TxyysW9d2UAMfyRY9pwDeP80N0hnijnK5IwnhKgdkcpjORkK/325rzID9u02KDfr9KR1uUOCYd0c97BSjR+5ypYQwKi2oRXUpL3bkbNX+7uSRshVs/3AUJq37Zr+IqAWD2cjA=="
+  }
+}

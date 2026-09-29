@@ -1,0 +1,16 @@
+{
+  "name": "omp-mobile",
+  "private": true,
+  "workspaces": ["packages/*", "server", "app"],
+  "scripts": {
+    "server": "bun server/src/main.ts",
+    "typecheck": "cd packages/protocol && bunx tsc --noEmit -p . && cd ../../server && bunx tsc --noEmit -p . && cd ../app && bunx tsc --noEmit",
+    "test": "cd server && bun test",
+    "e2e": "bun scripts/e2e.ts",
+    "format": "biome format --write .",
+    "format:check": "biome format ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14"
+  }
+}
