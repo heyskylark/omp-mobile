@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { Keyboard, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
@@ -23,6 +23,7 @@ export default function PairScreen() {
 	const [link, setLink] = useState("");
 	const [state, setState] = useState<PairState>({ kind: "idle" });
 	const attempted = useRef<string | null>(null);
+	const scroll = useRef<ScrollView>(null);
 	const save = useMachines((store) => store.save);
 
 	const connect = async (raw: string) => {
@@ -61,6 +62,13 @@ export default function PairScreen() {
 		}
 	}, [params.url, params.code, params.name]);
 
+	useEffect(() => {
+		const subscription = Keyboard.addListener("keyboardDidShow", () => {
+			scroll.current?.scrollToEnd({ animated: true });
+		});
+		return () => subscription.remove();
+	}, []);
+
 	const onScanned = ({ data }: BarcodeScanningResult) => {
 		if (state.kind !== "connecting") void connect(data);
 	};
@@ -72,7 +80,12 @@ export default function PairScreen() {
 	};
 
 	return (
-		<KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} className="flex-1 bg-ink">
+		<ScrollView
+			ref={scroll}
+			automaticallyAdjustKeyboardInsets
+			contentContainerClassName="flex-grow bg-ink"
+			keyboardShouldPersistTaps="handled"
+		>
 			<View className="mx-5 mt-5 aspect-square overflow-hidden rounded-panel border border-border bg-surface">
 				{permission?.granted ? (
 					<CameraView
@@ -104,6 +117,8 @@ export default function PairScreen() {
 						onChangeText={setLink}
 						autoCapitalize="none"
 						autoCorrect={false}
+						returnKeyType="go"
+						onSubmitEditing={() => void connect(link)}
 						placeholder="ompmobile://pair?…"
 						placeholderTextColor="#6F6F77"
 						className="h-12 flex-1 text-body text-primary"
@@ -118,6 +133,6 @@ export default function PairScreen() {
 					onPress={() => void connect(link)}
 				/>
 			</View>
-		</KeyboardAvoidingView>
+		</ScrollView>
 	);
 }
