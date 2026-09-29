@@ -1,9 +1,9 @@
 # From the open Add computer sheet (open-add-computer.yaml), taps the clipboard button, which pastes the device
 # pasteboard into the link field and connects.
 # Immediately before running: printf %s '<link>' | xcrun simctl pbcopy <SIM_UDID>
-# (Maestro's setClipboard is Maestro-internal and never reaches the app. When Simulator.app syncs the Mac
-# pasteboard, anything copied on the Mac replaces the link, so keep the gap to the tap short.)
-# The typed-link + Connect path is not driven: the keyboard covers the field and Connect (see features/pairing.md).
+# (Maestro's setClipboard is Maestro-internal and never reaches the app.) Run only when Simulator.app does not
+# sync the Mac pasteboard (`defaults read com.apple.iphonesimulator PasteboardAutomaticSync` prints 0); otherwise
+# Mac clipboard contents replace the link and can leak into evidence. See features/pairing.md.
 # env: MACHINE_NAME
 appId: com.heyskylark.ompmobile
 name: pair-paste

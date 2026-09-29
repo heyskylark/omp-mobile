@@ -27,11 +27,13 @@ name: new-session-approve
 - inputText: "Run bash: echo ${TOKEN}. Then reply with the single word done."
 - takeScreenshot: new-02-composer
 - tapOn: "Send"
+# Wait for the card title, not a loose "Approve" regex: Maestro text matching ignores case, so ".*Approve.*"
+# also matches a composer or prompt containing "approve" before any card exists.
 - extendedWaitUntil:
-    visible: ".*Approve.*"
+    visible: "Allow tool: .*"
     timeout: 120000
 - takeScreenshot: new-03-approval-pending
-- tapOn: ".*Approve.*"
+- tapOn: "Approve"
 # Maestro text selectors are full-match regexes, so these match only the reply/output elements,
 # never the user prompt that also contains the words.
 - extendedWaitUntil:

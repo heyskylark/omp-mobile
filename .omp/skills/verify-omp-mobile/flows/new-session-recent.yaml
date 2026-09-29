@@ -1,0 +1,30 @@
+# Starts a session by tapping the run's scratch project in New session's recent-project list (it is listed once a
+# session exists there, e.g. after new-session-approve.yaml). The server lists only recent projects inside the
+# configured roots (the run's scratch work dir). New session pre-selects the first one; tap the row anyway so the
+# flow proves the selection.
+# env: MACHINE_NAME, PROJECT (absolute scratch project path, regex-escaped), PROMPT
+appId: com.heyskylark.ompmobile
+name: new-session-recent
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*${PROJECT}.*"
+- takeScreenshot: recent-01-project-selected
+- tapOn: "Message OMP"
+- inputText: ${PROMPT}
+- tapOn: "Send"
+# Creation replaces New session with the transcript; the server-managed session shows "Session menu".
+- extendedWaitUntil:
+    visible: "Session menu"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 120000
+- takeScreenshot: recent-02-session-created

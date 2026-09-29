@@ -1,0 +1,25 @@
+# From the open Add computer sheet (open-add-computer.yaml), types a pairing link and submits with the
+# keyboard's Go key (Return). The sheet scrolls the field and Connect above the keyboard, so `tapOn: "Connect"`
+# works as the alternative submit.
+# env: PAIR_LINK (api.ts pair-link, or built from the menu bar window's code), MACHINE_NAME
+appId: com.heyskylark.ompmobile
+name: pair-typed
+---
+- tapOn: 'ompmobile://pair\?…'
+- inputText: ${PAIR_LINK}
+- takeScreenshot: typed-01-link-above-keyboard
+- pressKey: Enter
+# First pairing on an install asks for notification permission (the app registers for push while pairing).
+- extendedWaitUntil:
+    visible: "(“OMP” Would Like to Send You Notifications|${MACHINE_NAME})"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "“OMP” Would Like to Send You Notifications"
+    commands:
+      - takeScreenshot: typed-01b-notification-permission
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: ${MACHINE_NAME}
+    timeout: 30000
+- takeScreenshot: typed-02-machine-sessions

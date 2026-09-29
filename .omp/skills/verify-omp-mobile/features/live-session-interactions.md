@@ -4,38 +4,52 @@ The user follows a running session, answers the agent's `ask` questions and tool
 
 ## Sub-features
 
-- `live-approve`: approval card `Allow tool: <tool>` with `Deny` / `Approve`. **Exercised** (Approve, in `new-session-approve.yaml`).
-- `live-deny`: tap `Deny`; the tool item ends not succeeded. Recipe-only.
-- `live-question`: `ask` card with option buttons; `Other…` or `Your response` field plus `Send` for text. Recipe-only.
-- `live-followup`: type in `Message OMP`, tap `Send` on an existing session. Recipe-only.
-- `live-stop`: composer shows `Stop` while a turn runs; tapping it aborts (`POST /v1/sessions/<id>/abort`). Recipe-only.
-- `live-handoff`: `Session menu` → alert `Hand off to computer?` → `Hand off`; session becomes idle. Recipe-only.
-- `live-terminal`: a session started in a terminal shows `In terminal` and accepts phone prompts/approvals over Collab. Recipe-only (API path covered by `bun run e2e` phase C).
-- `live-notification-actions`: long-press notification → `Approve` / `Deny` / `Reply` / `Open`. Physical device only for real APNs; see Gotchas.
+- `live-approve`: approval card `Allow tool: <tool>` (title from OMP) with detail `Command: …` and buttons `Deny` / `Approve`. **Exercised** (`new-session-approve.yaml`, `prompt-approve.yaml`).
+- `live-deny`: `Deny`; the tool item ends `failed` with output `Tool call denied by user: bash`. **Exercised** (`live-interactions.yaml`).
+- `live-question`: question card with one button per option; `Other…` or `Your response` field plus `Send` for text answers. **Exercised** (option `Blue`, `live-interactions.yaml`); custom text recipe-only.
+- `live-followup`: `Message OMP` + `Send` on an existing session. **Exercised** (every step of `live-interactions.yaml`).
+- `live-stop`: the composer shows `Stop` only while a *server* session is starting, working, or settling; tapping it aborts the turn. **Exercised.**
+- `live-handoff`: `Session menu` (server-managed sessions only) → `Hand off to computer?` → `Hand off` → toast `Ready to resume on your computer`; the session becomes idle. **Exercised.**
+- `live-terminal`: a session started in a terminal shows `In terminal` and accepts phone prompts and approvals over Collab. **Exercised** (`prompt-approve.yaml` against a supervised TUI).
+- `live-notification-actions`: approval notifications offer `Approve` / `Deny`; question notifications offer `Reply` (text field, `Send`) / `Open`. Physical device only.
 
 ## How to get to it (user POV)
 
 - Open any session whose liveness is `Running`, `Needs you`, or `In terminal`; pending interactions sit directly above the composer.
-- Session header ellipsis (`Session menu`) appears only for server-managed sessions.
+- The header ellipsis (`Session menu`) appears only when the server manages the session.
 - Notifications arrive from the computer via APNs when `apns` is configured; tapping opens the session.
 
 ## Driving it with Maestro
 
-Preconditions: app paired; a live session exists. Create one with `new-session-approve.yaml` or a partial copy of it that stops at the pending card.
+Preconditions: app paired; the transcript of a server-managed session is open, e.g. right after `new-session-recent.yaml`.
 
-- **Approve (exercised):** wait for `".*Approve.*"`, screenshot, `tapOn: ".*Approve.*"`, wait for the reply, then `Send` visible (turn settled). Server check: tool item `state: "succeeded"` and `pending: []` in `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=50'`.
-- **Deny:** same prompt with a new token; `tapOn: ".*Deny.*"`; the snapshot's bash item must not be `succeeded` and no `OUTPUT, <TOKEN>` appears.
-- **Question:** prompt `Use the ask tool to ask me one question titled Color with options Red and Blue. Then reply with the color I picked.` (the prompt `scripts/e2e.ts` uses); wait for `".*Blue.*"` inside the card, tap it, assert the reply. Snapshot `pending` empties.
-- **Follow-up / Stop:** `tapOn: "Message OMP"`, `inputText`, `tapOn: "Send"`; for stop, send a long-running prompt, wait for `"Stop"`, tap it, wait for `"Send"`.
-- **Hand off:** `tapOn: "Session menu"`, `tapOn: "Hand off"`; then `api.ts … get '/v1/sessions/<id>?limit=5'` shows `liveness.kind: "idle"` after the turn settles.
-- **Terminal session:** start a supervised PTY process (OMP `bash` with `name: omp-mobile-verify-tui-<RUN_ID>`, `pty: true`, no `&`):
-  `cd <PROJECT> && OMP_MOBILE_HOME=<OMP_MOBILE_HOME> omp --config <SCRATCH>/collab.yml -e <REPO>/extension/omp-mobile.ts --approval-mode always-ask --model openai-codex/gpt-5.6-terra:medium --no-lsp --no-title`.
-  Wait until `api.ts … get '/v1/sessions?limit=20'` lists an item with `project.path == <PROJECT>` and `liveness.kind: "terminal"`; open it in the app (`In terminal`), send a prompt, approve from the phone, and read the TUI with `read proc://omp-mobile-verify-tui-<RUN_ID>`. Stop it with `write proc://omp-mobile-verify-tui-<RUN_ID>/kill` before cleanup.
+- **Deny → question → stop → hand off** (several small model turns, one flow):
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/live -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/live-interactions.yaml
+  ```
+
+  Screenshots `live-01-approval-pending` … `live-08-handed-off`. Second observation: `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=80'` must show the denied `bash` item `failed`, an `ask` item `succeeded` with `User selected: Blue`, the story turn with no text (aborted), `pending: []`, and `liveness.kind: "idle"`.
+- **Terminal session:** start a supervised PTY process (OMP `bash` with `name` `omp-mobile-verify-tui-<RUN_ID>`; `ready` log `collab:`). The PTY replaces `scripts/pty-run.py`, which only exists because `Bun.spawn` has no PTY:
+
+  ```sh
+  cd <PROJECT> && env -u BUN_BE_BUN OMP_MOBILE_HOME=<OMP_MOBILE_HOME> omp --config <SCRATCH>/collab.yml -e <REPO>/extension/omp-mobile.ts --approval-mode always-ask --cwd <PROJECT> --model openai-codex/gpt-5.6-terra:medium --no-lsp --no-title
+  ```
+
+  `api.ts <RUN_ID> get '/v1/sessions?limit=20'` lists it with `project.path == <PROJECT>`, title `New session`, and `liveness: {"kind":"terminal"}`. Then:
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal-open -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=New session' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/prompt-approve.yaml
+  ```
+
+  `read proc://omp-mobile-verify-tui-<RUN_ID>` shows `«omp-mobile» ›`, the phone's prompt, the approved command's output, and `<TOKEN>-done`; the snapshot's newest `bash` item output starts with `<TOKEN>`. Stop it with `write proc://omp-mobile-verify-tui-<RUN_ID>/kill` before cleanup.
 
 ## Gotchas
 
-- Composer accessibility labels are exactly `Send` and `Stop`; the placeholder is `Message OMP`. `Send` visible is the reliable "turn settled" signal.
+- Composer accessibility labels are exactly `Send` and `Stop`; the placeholder is `Message OMP`. `Send` is the "turn settled" signal for server sessions only. Terminal sessions always show `Send`, so `prompt-approve.yaml` waits for its unique `<TOKEN>-done` reply instead.
+- Wait on the card title `Allow tool: .*` and tap exact `Deny` / `Approve`: Maestro matching ignores case, and the prompts contain `-deny` / `approve`.
+- In a reused transcript, earlier replies (`done`) and tool cards with the same model-written title already exist. Use per-attempt reply words, and prove tool output through the API rather than by tapping `.*, bash, .*` (that taps the first matching card).
 - `--approval-mode always-ask` in the run's `rpcArgs` makes every tool call wait for approval; a flow that does not answer leaves the server session in `Needs you`.
-- Card and output elements concatenate text; assertions must full-match (`(?s).*OUTPUT, <TOKEN>\b.*`), otherwise they match the user's own prompt.
-- Notifications: the run's server has no `apns` config (`APNs not configured`), so nothing is pushed. `xcrun simctl push <SIM_UDID> com.heyskylark.ompmobile app/dev/push-sample.apns` delivers a sample, but per the README the notification service extension does not run for `simctl` pushes, and the sample is sealed for machine `test-machine`, not this run's pairing. Decryption and action proof needs a physical device.
+- Notifications: the run's server has no `apns` config (`apnsConfigured: false`), so nothing is pushed. `xcrun simctl push <SIM_UDID> com.heyskylark.ompmobile app/dev/push-sample.apns` delivers a sample, but per the README the notification service extension does not run for `simctl` pushes, and the sample is sealed for machine `test-machine`. Decryption and action proof needs a physical device.
 - The server closes its own OMP process once a turn settles and no phone is watching; `live.server` in `status` drops back to 0 on its own.

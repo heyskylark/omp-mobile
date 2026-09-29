@@ -1,0 +1,19 @@
+# Opens Add computer (from the Computers list, empty or not), submits a link that must be rejected, and asserts
+# the sheet's error text. Use a malformed link with EXPECT "That is not a valid OMP pairing link\\.", or a used or
+# expired link with EXPECT "Pairing code is invalid or expired".
+# env: PAIR_LINK, EXPECT (regex)
+appId: com.heyskylark.ompmobile
+name: pair-rejected
+---
+- launchApp
+- tapOn: ".*Add computer"
+- extendedWaitUntil:
+    visible: "Connect"
+    timeout: 10000
+- tapOn: 'ompmobile://pair\?…'
+- inputText: ${PAIR_LINK}
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: ${EXPECT}
+    timeout: 20000
+- takeScreenshot: rejected-01-error

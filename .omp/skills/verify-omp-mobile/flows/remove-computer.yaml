@@ -1,0 +1,27 @@
+# Removes a paired computer from the phone: computer row -> header ellipsis ("More") -> Remove computer ->
+# confirm. The app also sends DELETE /v1/devices/me, so the computer's device list loses this phone.
+# env: MACHINE_NAME
+appId: com.heyskylark.ompmobile
+name: remove-computer
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "More"
+- extendedWaitUntil:
+    visible: ".*Remove computer.*"
+    timeout: 10000
+- takeScreenshot: remove-01-computer-settings
+- tapOn: ".*Remove computer.*"
+- extendedWaitUntil:
+    visible: "Remove computer\\?"
+    timeout: 10000
+- takeScreenshot: remove-02-confirm
+- tapOn: "Remove"
+- extendedWaitUntil:
+    visible: "Computers"
+    timeout: 15000
+- assertNotVisible: "Computer, ${MACHINE_NAME}, .*"
+- takeScreenshot: remove-03-computers

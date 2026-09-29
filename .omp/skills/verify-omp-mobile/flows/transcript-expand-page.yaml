@@ -1,0 +1,32 @@
+# In a transcript already opened by open-session.yaml: expands a thought, then scrolls up until an item that
+# exists only in the older page (GET /v1/sessions/<id>/items?before=<olderCursor>&limit=40) is visible.
+# env: OLDER_TEXT (regex matching that item's accessibility text, e.g. ".*<tool title>.*")
+appId: com.heyskylark.ompmobile
+name: transcript-expand-page
+---
+# A long final reply can push every thought off screen, so scroll up to the newest one first.
+- scrollUntilVisible:
+    element:
+      text: ".*Thought ▾"
+    direction: UP
+    timeout: 30000
+- tapOn: ".*Thought ▾"
+# Expanded, the element reads "brain, Thought ▴, <thinking text>" (or "… Reasoning was redacted.").
+- extendedWaitUntil:
+    visible: "(?s).*Thought ▴, .+"
+    timeout: 10000
+# The inverted list keeps its bottom anchored, so the expanded text grows upward out of view; a DOWN swipe
+# reveals it. Maestro already counts the off-screen element as visible, so scrollUntilVisible does nothing here.
+- swipe:
+    direction: DOWN
+    duration: 600
+- waitForAnimationToEnd
+- takeScreenshot: transcript-01-thought-expanded
+# The transcript is an inverted list: older history is above. The app requests the next 40 items when the
+# visual top is within half a screen (onEndReached 0.5) and an olderCursor exists.
+- scrollUntilVisible:
+    element:
+      text: ${OLDER_TEXT}
+    direction: UP
+    timeout: 60000
+- takeScreenshot: transcript-02-older-page

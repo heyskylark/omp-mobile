@@ -12,7 +12,8 @@ Every command runs from the repository root. `$RUN_ID` / `<RUN_ID>` is the run i
 - **Surfaces:** iOS app (`app/`, bundle `com.heyskylark.ompmobile`) in the iOS Simulator; Bun server (`server/src/main.ts`) through its public `/v1/*` API and loopback `/admin/*` API; macOS menu bar app (`macos/`).
 - **Runtimes:** macOS, Xcode with an iOS 26.x runtime and the `iPhone 17 Pro` device type, Bun, `omp` on `PATH` (18.4.x), Maestro CLI (`/opt/homebrew/bin/maestro`, 2.10.0) with a JDK on `PATH`, Tailscale optional.
 - **Isolation:** each run owns a run id (`RUN_ID=$(date +%Y%m%d-%H%M%S)`), a server home + scratch project under `~/.cache/omp-mobile-verify/$RUN_ID/`, ports `28787`/`28788` (or another free pair), and a simulator named `omp-verify-$RUN_ID` created for the run. Concurrent runs need distinct ports. Never drive the installed LaunchAgent server (`com.heyskylark.omp-mobile.server`, ports 8787/8788), the e2e ports 18787/18788, or a simulator the run did not create.
-- **Not isolated:** the server always reads the invoking user's real `~/.omp/agent/sessions` (`server/src/main.ts` hard-codes it). History recipes read real sessions read-only; sessions the run creates land in buckets named `-.cache-omp-mobile-verify-$RUN_ID-*`, which cleanup removes.
+- **Not isolated:** the server always reads `$HOME/.omp/agent/sessions` (`server/src/main.ts`), i.e. the invoking user's real history. History recipes read real sessions read-only; sessions the run creates land in buckets named `-.cache-omp-mobile-verify-$RUN_ID-*`, which cleanup removes. For an empty history (e.g. `No sessions yet`), start a second run's server with `HOME=<that run's SCRATCH>` in front of its command.
+- **One computer per Mac:** the server's `machineId` is a hash of the Mac's hostname, so every run's server on this Mac is the *same computer* to the app. Pairing a second run's server replaces the first one's entry on the phone (removing it then leaves the Computers list empty). Re-pair the run you need next.
 - **Cost:** new-session and interaction recipes run real model turns with `openai-codex/gpt-5.6-terra:medium` (`rpcArgs` in the run's `config.json`).
 - **Non-goals / physical-device only:** QR scanning (Simulator has no camera), APNs delivery and notification-service decryption, TestFlight/Release-on-device behavior, performance.
 
@@ -81,7 +82,7 @@ maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/<flow> -e 
   The status file must list a new `iPhone` device. The Add computer paste button is a separate recipe (`features/pairing.md`) because it reads the pasteboard, which Simulator.app may overwrite with the Mac's.
 
 - Feature recipes and their flows: `features/README.md`.
-- Selectors: Maestro text selectors are **full-match regexes** against each element's accessibility text. Many elements concatenate icon names and several labels (`add, Add computer`; `Computer, <name>, Online, Forward`; `<title>, <project>, · <age>, <preview>`), so use `.*` anchors and escape `? . ( ) [ ] * + |` in dynamic values.
+- Selectors: Maestro text selectors are **full-match, case-insensitive regexes** against each element's accessibility text. Many elements expose iOS-synthesized text that is not in product source: SF Symbol names (`add` for the `plus` header icon, `More` for `ellipsis.circle`, `paste` for the clipboard icon) and concatenated rows (`add, Add computer`; `Computer, <name>, Online, Forward`; `<title>, <project>, · <age>, <preview>`; `wrench.and.screwdriver, <title>, <tool>, selected`). Use `.*` anchors, escape `? . ( ) [ ] * + |` in dynamic values, and never wait on a word that also appears in your own prompt or token (`".*Approve.*"` matches a token containing `approve`). Wait on card titles such as `Allow tool: .*` instead.
 - Inspect the live screen when a selector misses:
 
   ```sh
@@ -97,7 +98,7 @@ maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/<flow> -e 
   .omp/skills/verify-omp-mobile/bin/api.ts "$RUN_ID" get '/v1/sessions/<sessionId>?limit=50'
   ```
 
-  The probe appears as a paired device named `verify-probe` in the app-facing server and in the menu bar; account for it when asserting device lists.
+  The probe appears as a paired device named `verify-probe` in the app-facing server and in the menu bar; account for it when asserting device lists. If a recipe removed it, the next `get` pairs a new probe automatically.
 
 ## Evidence
 
@@ -131,6 +132,7 @@ All in `.omp/skills/verify-omp-mobile/bin/`, executable, invoked exactly as abov
 | `api.ts <run-id> pair-link \| status \| get </v1/…>` | one-time pairing link; admin status; probe-device GETs |
 | `texts.ts [hierarchy.json]` | compact Maestro hierarchy (stdin or file) |
 | `window-shot.sh <pid> <prefix>` | capture only that process's windows (Screen Recording permission) |
+| `menubar-remove.sh <pid> <device-name>` | click the menu bar panel's `Remove` for one device (Accessibility permission) |
 | `cleanup.sh <run-id>` | remove run scratch, simulator, session buckets; keep evidence |
 
 Repository-native commands reused: `scripts/simulator.sh <udid>`, `macos/build.sh`, `bun run e2e` (API-level regression over real OMP on ports 18787/18788; run it too after OMP upgrades).
