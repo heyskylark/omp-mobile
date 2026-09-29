@@ -553,9 +553,13 @@ async function phaseC(): Promise<string> {
 	);
 	const admin = await request("/admin/status", { headers: { authorization: `Bearer ${adminToken}` } }, false);
 	assert(
-		admin.response.ok && admin.json.problems?.includes("APNs not configured"),
-		"APNs-less server remains healthy",
-		{ status: admin.response.status, problems: admin.json?.problems },
+		admin.response.ok && admin.json.apnsConfigured === false && !admin.json.problems?.includes("APNs not configured"),
+		"APNs-less server reports structured status without a duplicate problem",
+		{
+			status: admin.response.status,
+			apnsConfigured: admin.json?.apnsConfigured,
+			problems: admin.json?.problems,
+		},
 	);
 
 	tui.stdin.write("/exit\r");

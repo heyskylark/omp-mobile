@@ -178,7 +178,7 @@ Push notifications go from each computer straight to Apple. Each computer needs 
    }
    ```
 
-4. Restart the server. The menu bar stops showing **Push notifications are not configured**.
+4. Restart the server. The menu bar stops showing **Push notifications are not configured**. This state is reported by `apnsConfigured` in the admin status response rather than duplicated in its general `problems` list.
 
 The phone registers for notifications when you pair it. Release builds, including TestFlight, register for the production APNs environment and Debug builds for the sandbox. The server sends each phone's notifications to the environment it registered. Each notification's text is encrypted with a key shared only by that phone and the computer, so Apple sees a generic "New activity" placeholder, and the app's notification service extension decrypts the real text on the phone.
 
