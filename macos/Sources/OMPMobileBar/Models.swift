@@ -74,16 +74,16 @@ enum ServerState: Sendable {
     case offline(String)
     case online(AdminStatus)
 
-    var symbolName: String {
+    var menuBarMark: MenuBarMark {
         switch self {
         case .offline:
-            return "bolt.slash.fill"
+            return .offline
         case .online(let status) where status.live.pending > 0:
-            return "exclamationmark.bubble.fill"
+            return .waiting
         case .online(let status) where !status.problems.isEmpty || !status.apnsConfigured:
-            return "exclamationmark.triangle.fill"
+            return .problem
         case .online:
-            return "bolt.horizontal.circle.fill"
+            return .online
         }
     }
 }
