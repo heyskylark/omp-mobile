@@ -155,6 +155,25 @@ describe("HTTP API", () => {
 		).toBe(404);
 	});
 
+	test("reports missing APNs through structured status without duplicating it as a problem", async () => {
+		const { options } = await fixture();
+		const handler = createHttpHandler(
+			options,
+			"loopback",
+			() => "http://mac:8787",
+			() => ["Tailscale is disconnected"],
+		);
+		const response = await handler(
+			new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }),
+		);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			apnsConfigured: false,
+			problems: ["Tailscale is disconnected"],
+		});
+	});
+
 	test("pairing route consumes a code once", async () => {
 		const { options, devices } = await fixture();
 		const handler = createHttpHandler(options, "app", () => "http://mac:8787");

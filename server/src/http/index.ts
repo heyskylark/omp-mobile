@@ -224,11 +224,7 @@ export function createHttpHandler(
 						})),
 						pairings: options.devices.listPairings(),
 						live: { server: live.server, terminal: live.terminal, pending: live.pending },
-						problems: [
-							...live.problems,
-							...currentProblems(),
-							...(!options.config.apns ? ["APNs not configured"] : []),
-						],
+						problems: [...live.problems, ...currentProblems()],
 					};
 					return json(status);
 				}

@@ -1,11 +1,12 @@
 #!/bin/bash
-# Builds the app in Release for the booted iOS Simulator and installs it. Release embeds the JS bundle, so no
-# Metro server is needed. Simulator builds are signed ad hoc so the keychain entitlements work.
+# Builds the app in Release for an iOS Simulator and installs it. Pass a simulator UDID to target that device;
+# otherwise the first booted simulator is used. Release embeds the JS bundle, so no Metro server is needed.
+# Simulator builds are signed ad hoc so the keychain entitlements work.
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "$0")/.." && pwd)
 BUNDLE_ID=${OMP_BUNDLE_ID:-com.heyskylark.ompmobile}
-DEVICE=$(xcrun simctl list devices booted | grep -oE '\([0-9A-F-]{36}\)' | head -1 | tr -d '()' || true)
+DEVICE=${1:-$(xcrun simctl list devices booted | grep -oE '\([0-9A-F-]{36}\)' | head -1 | tr -d '()' || true)}
 if [ -z "$DEVICE" ]; then
 	echo "Boot a simulator first, for example: xcrun simctl boot 'iPhone 17 Pro' && open -a Simulator" >&2
 	exit 1
