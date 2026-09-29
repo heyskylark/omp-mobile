@@ -7,6 +7,15 @@ enum MenuBarMark: Sendable {
     case problem
     case offline
 
+    var accessibilityValue: String {
+        switch self {
+        case .online: "Online"
+        case .waiting: "Waiting"
+        case .problem: "Warning"
+        case .offline: "Offline"
+        }
+    }
+
     @MainActor var image: NSImage {
         switch self {
         case .online: Self.onlineImage

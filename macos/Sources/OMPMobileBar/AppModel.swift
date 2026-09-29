@@ -45,6 +45,7 @@ final class AppModel: ObservableObject {
         } catch {
             serverState = .offline(error.localizedDescription)
         }
+        updateMenuBarAccessibility()
     }
 
     func showPairing() {
@@ -114,6 +115,25 @@ final class AppModel: ObservableObject {
             "gui/\(getuid())/com.heyskylark.omp-mobile.server",
         ]
         try? process.run()
+    }
+
+    private func updateMenuBarAccessibility() {
+        // MenuBarExtra does not forward SwiftUI's accessibility value to its NSStatusBarButton.
+        let value = serverState.menuBarMark.accessibilityValue
+        for window in NSApp.windows where window.level == .statusBar {
+            updateMenuBarAccessibility(in: window.contentView, value: value)
+        }
+    }
+
+    private func updateMenuBarAccessibility(in view: NSView?, value: String) {
+        guard let view else { return }
+        if let button = view as? NSButton {
+            button.setAccessibilityLabel("OMP Mobile")
+            button.setAccessibilityValue(value)
+        }
+        for subview in view.subviews {
+            updateMenuBarAccessibility(in: subview, value: value)
+        }
     }
 
     private func poll() async {
