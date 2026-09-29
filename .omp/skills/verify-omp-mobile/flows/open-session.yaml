@@ -1,0 +1,21 @@
+# Opens a computer's session list and one existing session transcript.
+# env: MACHINE_NAME, SESSION_TITLE (title from api.ts get /v1/sessions, regex-escaped).
+# Computer rows read "Computer, <name>, Online|Offline, Forward"; session rows read
+# "<title>, <project>, · <age>, <preview>".
+appId: com.heyskylark.ompmobile
+name: open-session
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: "${SESSION_TITLE},.*"
+    timeout: 30000
+- takeScreenshot: history-01-session-list
+- tapOn: "${SESSION_TITLE},.*"
+- extendedWaitUntil:
+    visible: "Message OMP"
+    timeout: 30000
+- takeScreenshot: history-02-transcript

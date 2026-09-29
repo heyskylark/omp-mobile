@@ -26,6 +26,9 @@ server.json
 devices.json
 install-state/
 
+# Verification evidence from .omp/skills/verify-omp-mobile
+.verify-evidence/
+
 # Expo and EAS
 .expo/
 .expo-shared/

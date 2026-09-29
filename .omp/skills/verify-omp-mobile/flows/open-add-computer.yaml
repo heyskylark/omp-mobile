@@ -1,0 +1,14 @@
+# Opens the Add computer sheet on a fresh install. Run pair-paste.yaml right after it.
+appId: com.heyskylark.ompmobile
+name: open-add-computer
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Your computers, anywhere"
+    timeout: 30000
+- takeScreenshot: pair-01-computers-empty
+- tapOn: ".*Add computer"
+- extendedWaitUntil:
+    visible: "Connect"
+    timeout: 10000
+- takeScreenshot: pair-02-add-computer
