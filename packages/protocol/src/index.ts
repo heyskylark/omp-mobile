@@ -143,6 +143,8 @@ export type PushEnvironment = "sandbox" | "production";
 export interface PairRequest {
 	code: string;
 	deviceName: string;
+	/** Existing bearer token for this server. When valid, pairing replaces that device registration. */
+	previousToken?: string;
 	push?: { token: string; environment: PushEnvironment };
 }
 

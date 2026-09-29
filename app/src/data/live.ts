@@ -123,6 +123,12 @@ interface SocketEntry {
 }
 
 const sockets = new Map<string, SocketEntry>();
+export function resetMachineSocket(machineId: string) {
+	const entry = sockets.get(machineId);
+	if (!entry) return;
+	entry.socket.stop();
+	sockets.delete(machineId);
+}
 
 export function acquireMachineSocket(machine: PairedMachine): { socket: MachineSocket; release: () => void } {
 	let entry = sockets.get(machine.machineId);

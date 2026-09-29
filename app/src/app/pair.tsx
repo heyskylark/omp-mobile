@@ -36,7 +36,15 @@ export default function PairScreen() {
 		attempted.current = payload.code;
 		setState({ kind: "connecting" });
 		try {
-			const response = await pair(payload.url, { code: payload.code, deviceName: "iPhone" });
+			const normalizedUrl = payload.url.replace(/\/$/, "");
+			const previous = useMachines
+				.getState()
+				.machines.find((machine) => machine.url.replace(/\/$/, "") === normalizedUrl);
+			const response = await pair(payload.url, {
+				code: payload.code,
+				deviceName: "iPhone",
+				...(previous ? { previousToken: previous.token } : {}),
+			});
 			const machine = {
 				machineId: response.machineId,
 				name: response.machineName || payload.name,

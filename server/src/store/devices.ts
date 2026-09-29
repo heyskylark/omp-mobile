@@ -47,7 +47,7 @@ export interface DeviceStore {
 	list(): StoredDevice[];
 	listPairings(): PairingStatus[];
 	createPairing(): PairingCode;
-	pair(code: string, name: string, push?: StoredDevice["push"]): Promise<PairedDevice | null>;
+	pair(code: string, name: string, push?: StoredDevice["push"], previousToken?: string): Promise<PairedDevice | null>;
 	authenticate(token: string): Promise<StoredDevice | null>;
 	setPush(deviceId: string, push: StoredDevice["push"]): Promise<void>;
 	clearPush(deviceId: string): Promise<void>;
@@ -127,7 +127,7 @@ export function createDeviceStore(path: string, now: () => number = Date.now): D
 			pairingCodes.set(id, { id, digest: createHash("sha256").update(code).digest(), expiresAt });
 			return { id, code, expiresAt: new Date(expiresAt).toISOString() };
 		},
-		async pair(code, name, push) {
+		async pair(code, name, push, previousToken) {
 			prunePairings();
 			const candidate = createHash("sha256").update(code).digest();
 			let matched: PendingCode | undefined;
@@ -137,6 +137,16 @@ export function createDeviceStore(path: string, now: () => number = Date.now): D
 				}
 			}
 			if (!matched) return null;
+			const previousTokenHash = previousToken ? sha256(previousToken) : undefined;
+			if (previousTokenHash) {
+				for (const [id, existing] of devices) {
+					const matches = timingSafeEqual(
+						Buffer.from(previousTokenHash, "hex"),
+						Buffer.from(existing.tokenHash, "hex"),
+					);
+					if (matches) devices.delete(id);
+				}
+			}
 			const token = randomBytes(32).toString("base64url");
 			const pairedAt = new Date(now()).toISOString();
 			const device: StoredDevice = {
