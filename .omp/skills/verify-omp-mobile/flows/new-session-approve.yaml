@@ -1,0 +1,50 @@
+# Starts a session from the phone in the run's scratch project, approves the agent's bash call in the app,
+# and waits for the tool output. Costs one small model turn (rpcArgs model in config.json).
+# env: MACHINE_NAME, TOKEN (unique word the agent must echo)
+appId: com.heyskylark.ompmobile
+name: new-session-approve
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- takeScreenshot: new-01-folder-browser
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Message OMP"
+- inputText: "Run bash: echo ${TOKEN}. Then reply with the single word done."
+- takeScreenshot: new-02-composer
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: ".*Approve.*"
+    timeout: 120000
+- takeScreenshot: new-03-approval-pending
+- tapOn: ".*Approve.*"
+# Maestro text selectors are full-match regexes, so these match only the reply/output elements,
+# never the user prompt that also contains the words.
+- extendedWaitUntil:
+    visible: "(?i)done\\.?"
+    timeout: 120000
+# The composer shows "Stop" while the turn runs and "Send" once it settles.
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 60000
+- takeScreenshot: new-04-turn-finished
+- tapOn: ".*, bash, .*"
+# An expanded tool card is one accessibility element: "<icon>, <title>, bash, selected, INPUT, <json>, OUTPUT, <text>".
+- extendedWaitUntil:
+    visible: "(?s).*OUTPUT, ${TOKEN}\\b.*"
+    timeout: 15000
+- takeScreenshot: new-05-tool-output

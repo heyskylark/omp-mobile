@@ -1,0 +1,26 @@
+# Pairs through the ompmobile://pair deep link (what the QR code encodes; the Simulator has no camera).
+# env: PAIR_LINK (api.ts pair-link, or built from the menu bar window's code), MACHINE_NAME
+appId: com.heyskylark.ompmobile
+name: pair-deeplink
+---
+- openLink: ${PAIR_LINK}
+# iOS confirms custom-scheme opens coming from outside the app.
+- runFlow:
+    when:
+      visible: "Open in “OMP”\\?"
+    commands:
+      - tapOn: "Open"
+# First pairing on an install asks for notification permission (the app registers for push while pairing).
+- extendedWaitUntil:
+    visible: "(“OMP” Would Like to Send You Notifications|${MACHINE_NAME})"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "“OMP” Would Like to Send You Notifications"
+    commands:
+      - takeScreenshot: deeplink-00-notification-permission
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: ${MACHINE_NAME}
+    timeout: 30000
+- takeScreenshot: deeplink-01-machine-sessions

@@ -205,7 +205,7 @@ bun run format        # Biome formatter
 
 `bun run e2e` starts its own server with a temporary home on ports 18787 and 18788, then drives it through the public API. It pairs a device, pages real history, starts a session from the "phone", answers an `ask` question and an approval, hands the session off, opens a real terminal session in a pseudo-terminal, approves a tool call through Collab, exits the terminal, and resumes the session under the server. It uses a small model and cleans up after itself. Run it after upgrading OMP, because the Collab wire protocol must match exactly.
 
-To run the app in the iOS Simulator, boot a simulator and run the build script. It builds a Release app with the JavaScript bundle embedded, so you do not need Metro.
+To run the app in the iOS Simulator, boot a simulator and run the build script. It builds a Release app with the JavaScript bundle embedded, so you do not need Metro. It installs on the first booted simulator, or on the one whose UDID you pass, for example `scripts/simulator.sh <udid>`.
 
 ```sh
 xcrun simctl boot 'iPhone 17 Pro' && open -a Simulator
