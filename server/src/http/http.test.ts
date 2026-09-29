@@ -169,6 +169,25 @@ describe("HTTP API", () => {
 		expect((await handler(request())).status).toBe(400);
 	});
 
+	test("re-pairing replaces the device authenticated by the previous token", async () => {
+		const { options, devices, token } = await fixture();
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const pairing = devices.createPairing();
+		const response = await handler(
+			new Request("http://mac/v1/pair", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ code: pairing.code, deviceName: "Phone", previousToken: token }),
+			}),
+		);
+		const paired = (await response.json()) as { deviceId: string; token: string };
+
+		expect(response.status).toBe(200);
+		expect(devices.list().map((device) => device.id)).toEqual([paired.deviceId]);
+		expect(await devices.authenticate(token)).toBeNull();
+		expect((await devices.authenticate(paired.token))?.id).toBe(paired.deviceId);
+	});
+
 	test("WebSocket sends hello and fans out subscribed session messages", async () => {
 		const { options, token, hub } = await fixture();
 		service = await startHttp(options);

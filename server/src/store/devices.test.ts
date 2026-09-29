@@ -26,6 +26,31 @@ describe("device store", () => {
 		expect(JSON.parse(await readFile(path, "utf8")).devices).toHaveLength(1);
 	});
 
+	test("re-pairing with the previous token replaces that device", async () => {
+		directory = await mkdtemp(join(tmpdir(), "omp-mobile-devices-"));
+		const store = createDeviceStore(join(directory, "devices.json"));
+		const firstCode = store.createPairing();
+		const first = await store.pair(firstCode.code, "Phone");
+		const secondCode = store.createPairing();
+		const second = await store.pair(secondCode.code, "Phone", undefined, first!.token);
+
+		expect(store.list().map((device) => device.id)).toEqual([second!.device.id]);
+		expect(await store.authenticate(first!.token)).toBeNull();
+		expect((await store.authenticate(second!.token))?.id).toBe(second!.device.id);
+	});
+
+	test("an invalid previous token does not prevent pairing", async () => {
+		directory = await mkdtemp(join(tmpdir(), "omp-mobile-devices-"));
+		const store = createDeviceStore(join(directory, "devices.json"));
+		const firstCode = store.createPairing();
+		await store.pair(firstCode.code, "Phone");
+		const secondCode = store.createPairing();
+		const second = await store.pair(secondCode.code, "Phone", undefined, "expired-token");
+
+		expect(second).not.toBeNull();
+		expect(store.list()).toHaveLength(2);
+	});
+
 	test("expired pairing codes cannot be redeemed", async () => {
 		directory = await mkdtemp(join(tmpdir(), "omp-mobile-devices-"));
 		let now = 1_000;

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { OmpNative } from "../../modules/omp-native";
+import { resetMachineSocket } from "./live";
 import type { MachineSecretInput, PairedMachine } from "../native/types";
 
 type LoadState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; message: string };
@@ -28,6 +29,7 @@ export const useMachines = create<MachinesState>((set, get) => ({
 	},
 	async save(machine) {
 		await OmpNative.saveMachine(machine);
+		resetMachineSocket(machine.machineId);
 		const publicMachine: PairedMachine = machine;
 		set({ machines: [...get().machines.filter((item) => item.machineId !== machine.machineId), publicMachine] });
 	},

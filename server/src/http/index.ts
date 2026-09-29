@@ -21,6 +21,7 @@ import { watchTailscale, type TailscaleState } from "../tailscale.ts";
 const PairSchema = z.object({
 	code: z.string().length(8),
 	deviceName: z.string().trim().min(1).max(200),
+	previousToken: z.string().min(1).optional(),
 	push: z.object({ token: z.string().min(1), environment: z.enum(["sandbox", "production"]) }).optional(),
 });
 const PushSchema = z.object({ token: z.string().min(1), environment: z.enum(["sandbox", "production"]) });
@@ -248,7 +249,12 @@ export function createHttpHandler(
 			}
 			if (path === "/v1/pair" && req.method === "POST") {
 				const request = PairSchema.parse(await body(req));
-				const paired = await options.devices.pair(request.code, request.deviceName, request.push);
+				const paired = await options.devices.pair(
+					request.code,
+					request.deviceName,
+					request.push,
+					request.previousToken,
+				);
 				if (!paired) throw new HttpError(400, "bad_request", "Pairing code is invalid or expired");
 				return json({
 					machineId: options.machineId,
