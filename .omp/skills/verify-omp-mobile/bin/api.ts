@@ -36,7 +36,7 @@ if (command === "pair-link") {
 	console.log(JSON.stringify(await call("/admin/status", { headers: admin }), null, 2));
 } else {
 	const probeFile = join(scratch, "probe.json");
-	if (!existsSync(probeFile)) {
+	const pairProbe = async () => {
 		const { code } = await pairing();
 		const paired = (await call("/v1/pair", {
 			method: "POST",
@@ -44,7 +44,14 @@ if (command === "pair-link") {
 			body: JSON.stringify({ code, deviceName: "verify-probe" }),
 		})) as PairResponse;
 		writeFileSync(probeFile, JSON.stringify({ token: paired.token }), { mode: 0o600 });
-	}
-	const { token } = JSON.parse(readFileSync(probeFile, "utf8")) as { token: string };
+		return paired.token;
+	};
+	const stored: unknown = existsSync(probeFile) ? JSON.parse(readFileSync(probeFile, "utf8")) : null;
+	let token =
+		stored && typeof stored === "object" && "token" in stored && typeof stored.token === "string"
+			? stored.token
+			: await pairProbe();
+	// A recipe may remove verify-probe (menu bar Remove); pair a new probe once instead of failing.
+	if ((await fetch(base + path!, { headers: { authorization: `Bearer ${token}` } })).status === 401) token = await pairProbe();
 	console.log(JSON.stringify(await call(path!, { headers: { authorization: `Bearer ${token}` } }), null, 2));
 }
