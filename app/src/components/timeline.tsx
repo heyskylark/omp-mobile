@@ -35,7 +35,7 @@ function Thinking({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
 	return (
 		<Pressable
 			onPress={() => setExpanded((value) => !value)}
-			className="mb-2 self-start rounded-full border border-border bg-surface px-3 py-1.5"
+			className={`mb-2 self-start border border-border bg-surface px-3 py-1.5 ${expanded ? "rounded-card" : "rounded-full"}`}
 		>
 			<View className="flex-row items-center gap-2">
 				<Icon name="brain" size={14} color="#9A9AA2" />
