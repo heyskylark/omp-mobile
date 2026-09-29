@@ -1,0 +1,60 @@
+# In an open, server-managed transcript (after new-session-recent.yaml): deny a tool call, answer an ask question,
+# stop a running turn, then hand the session off. Each step sends a follow-up prompt through the composer.
+# Costs several small model turns. env: TOKEN (unique word per run)
+appId: com.heyskylark.ompmobile
+name: live-interactions
+---
+# Deny
+- tapOn: "Message OMP"
+- inputText: "Run bash: echo ${TOKEN}-deny. If it is denied, reply with the single word refused."
+- tapOn: "Send"
+# Maestro text matching ignores case; wait for the card title so the prompt's "-deny" cannot match.
+- extendedWaitUntil:
+    visible: "Allow tool: .*"
+    timeout: 120000
+- takeScreenshot: live-01-approval-pending
+- tapOn: "Deny"
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 120000
+- takeScreenshot: live-02-denied
+# Question
+- tapOn: "Message OMP"
+- inputText: "Use the ask tool to ask me one question titled Color with options Red and Blue. Then reply with only the color I picked."
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Blue"
+    timeout: 120000
+- takeScreenshot: live-03-question-pending
+- tapOn: "Blue"
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 120000
+- extendedWaitUntil:
+    visible: "(?i)blue\\.?"
+    timeout: 30000
+- takeScreenshot: live-04-question-answered
+# Stop
+- tapOn: "Message OMP"
+- inputText: "Write a 1500-word story about a lighthouse keeper. Do not use any tools."
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 60000
+- takeScreenshot: live-05-running
+- tapOn: "Stop"
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 60000
+- takeScreenshot: live-06-stopped
+# Hand off
+- tapOn: "Session menu"
+- extendedWaitUntil:
+    visible: "Hand off to computer\\?"
+    timeout: 10000
+- takeScreenshot: live-07-handoff-alert
+- tapOn: "Hand off"
+- extendedWaitUntil:
+    notVisible: "Session menu"
+    timeout: 60000
+- takeScreenshot: live-08-handed-off

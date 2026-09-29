@@ -1,0 +1,22 @@
+# In an open transcript (server-managed or `In terminal`): send a follow-up prompt from the phone, approve the bash
+# call, and wait for the reply. Terminal sessions never show Stop, so the unique reply is the settle signal.
+# The transcript may already hold earlier bash cards with the same model-written title, so this flow does not
+# expand a card; prove the output with `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=40'` (tool output
+# starts with TOKEN).
+# env: TOKEN (unique word per attempt)
+appId: com.heyskylark.ompmobile
+name: prompt-approve
+---
+- tapOn: "Message OMP"
+- inputText: "Run bash: echo ${TOKEN}. Then reply with exactly ${TOKEN}-done and nothing else."
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Allow tool: .*"
+    timeout: 120000
+- takeScreenshot: prompt-01-approval-pending
+- tapOn: "Approve"
+# Full match: only the reply element is exactly "<TOKEN>-done", not the prompt that contains it.
+- extendedWaitUntil:
+    visible: "${TOKEN}-done\\.?"
+    timeout: 120000
+- takeScreenshot: prompt-02-replied

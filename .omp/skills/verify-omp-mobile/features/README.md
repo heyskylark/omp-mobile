@@ -12,8 +12,8 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 ## Driving conventions
 
 - Maestro CLI with `--device <SIM_UDID>` and `--test-output-dir <EVIDENCE>/maestro/<flow>`; flows live in `../flows/`.
-- Selectors are full-match regexes on accessibility text. Use the concatenated forms recorded in each recipe; escape regex metacharacters in titles and links.
-- Prefer visible labels and SF Symbol names Maestro exposes (`add`, `More`, `paste`, `Send`, `Stop`, `Session menu`) over coordinates. No app element has a `testID`.
+- Selectors are full-match, case-insensitive regexes on accessibility text. Use the concatenated forms recorded in each recipe; escape regex metacharacters in titles and links; never wait on a word your own prompt or token also contains.
+- Prefer visible labels and the SF Symbol names iOS exposes (`add`, `More`, `paste`, `Send`, `Stop`, `Session menu`) over coordinates. No app element has a `testID`.
 - `launchApp` restarts the app at the Computers list; recipes navigate from there.
 - Put device clipboard content with `xcrun simctl pbcopy <SIM_UDID>`; Maestro's `setClipboard` never reaches the app.
 
@@ -27,8 +27,8 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 
 ## Features
 
-- [Pairing a computer](./pairing.md) — Add computer (paste, typed link, deep link, QR), remove computer.
-- [Session history](./session-history.md) — Computers list, session list, transcript, paging, expandable cards.
-- [New session from the phone](./new-session.md) — recent project or folder browser, first prompt.
-- [Live session, questions, and approvals](./live-session-interactions.md) — approve/deny, answer questions, follow-up, stop, hand off, terminal (Collab) sessions, notification actions.
-- [Menu bar app](./menubar.md) — status panel, pairing window, paired devices.
+- [Pairing a computer](./pairing.md) — deep link, typed link, paste button, QR, rejected links, re-pair replacement, remove computer.
+- [Session history](./session-history.md) — session list, transcript, older-page loading, thought and tool expansion, empty history.
+- [New session from the phone](./new-session.md) — folder browser or recent project, first prompt, roots confinement.
+- [Live session, questions, and approvals](./live-session-interactions.md) — approve/deny, questions, follow-up, stop, hand off, terminal (Collab) sessions, notification actions.
+- [Menu bar app](./menubar.md) — pairing window and consumed-code confirmation, status panel and status item, remove device, offline.

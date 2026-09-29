@@ -1,45 +1,50 @@
 # Session history
 
-The user browses every OMP session on a paired computer, newest first, and opens any transcript; long transcripts load older pages as the user scrolls up.
+The user browses every OMP session on a paired computer, newest first, and opens any transcript; long transcripts load older pages as the user scrolls up, and thoughts and tool calls expand in place.
 
 ## Sub-features
 
-- `history-list`: computer row → session list grouped `TODAY` / `YESTERDAY` / `EARLIER` (source strings `Today`/`Yesterday`/`Earlier`, rendered uppercase), each row with title, project, age, preview, and liveness (`Needs you`, `In terminal`, `Running`, `Conflict`, `Unavailable`). **Exercised.**
-- `history-open`: tap a row → transcript with the composer `Message OMP`. **Exercised** (`open-session.yaml`).
-- `history-paging`: scroll up in a long transcript → `Loading earlier messages…` then older items. Recipe-only.
-- `history-expand`: tap `Thought ▾` (→ `Thought ▴`) or a tool card (→ `INPUT` / `OUTPUT` / `Output · truncated`). Tool-card expansion **exercised** in `new-session-approve.yaml`; thought expansion recipe-only.
-- `history-empty`: a computer with no sessions shows `No sessions yet`. Not reachable while the server reads the user's real history.
+- `history-list`: computer row → session list grouped `TODAY` / `YESTERDAY` / `EARLIER` (source `Today`/`Yesterday`/`Earlier`, styled uppercase), each row with title, project, age, preview, and liveness (`Needs you`, `In terminal`, `Running`, `Conflict`, `Unavailable`). The app asks for 30 sessions per page. **Exercised.**
+- `history-open`: tap a row → transcript titled with the session title and project, composer `Message OMP`. **Exercised** (`open-session.yaml`).
+- `history-paging`: scrolling up in a long transcript loads 40 older items (`GET /v1/sessions/<id>/items?before=<olderCursor>&limit=40`); `Loading earlier messages…` shows while it loads. **Exercised** (`transcript-expand-page.yaml`).
+- `history-expand-thought`: `Thought ▾` → `Thought ▴` plus the thinking text (or `Reasoning was redacted.`). **Exercised** (`transcript-expand-page.yaml`).
+- `history-expand-tool`: tapping a tool card shows `INPUT` / `OUTPUT` (source `Input` / `Output` / `Output · truncated`, styled uppercase). **Exercised** (`new-session-approve.yaml`).
+- `history-empty`: a computer whose history is empty shows `No sessions yet`. **Exercised** (second run's server with `HOME=<SCRATCH>`).
 
 ## How to get to it (user POV)
 
 - Computers screen → tap the computer row (`<name>`, `Online`).
 - Session list header: machine name, `+` (new session), ellipsis (computer settings).
-- Tap a session → transcript titled with the session title and project subtitle; newest content at the bottom.
+- Tap a session → transcript; newest content at the bottom, older pages above.
 
 ## Driving it with Maestro
 
 Preconditions: app paired to this run's server.
 
-- Pick a session from the server's view (these are the user's real sessions; avoid a session that is actively running unless that is the point):
+- Pick a session from the server's view. These are the user's real sessions; choose one that is not running, sits within the first screen of rows, has an `olderCursor`, and has at least one non-redacted thinking block:
 
   ```sh
-  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=5' > <EVIDENCE>/history-api-sessions.json
+  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=8' > <EVIDENCE>/history-api-sessions.json
+  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions/<id>?limit=40' > <EVIDENCE>/history-api-snapshot.json
+  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions/<id>/items?before=<url-encoded olderCursor>&limit=40' > <EVIDENCE>/history-api-older.json
   ```
 
-- Open it (escape regex metacharacters in the title):
+  From the older page, pick a tool title that is unique across both pages as `<older title>`.
+- Open, expand, and page:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
-  maestro --device <SIM_UDID> hierarchy | .omp/skills/verify-omp-mobile/bin/texts.ts > <EVIDENCE>/history-transcript-texts.txt
-  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions/<id>?limit=20' > <EVIDENCE>/history-api-snapshot.json
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/transcript -e 'OLDER_TEXT=.*<escaped older title>.*' .omp/skills/verify-omp-mobile/flows/transcript-expand-page.yaml
   ```
 
-  Pass: `history-01-session-list.png` shows the row, `history-02-transcript.png` shows the transcript, and tool-card titles in the hierarchy dump (`wrench.and.screwdriver, <title>, <tool>, selected`) appear in the snapshot's newest `items`.
-- **Paging (recipe):** in the transcript, `scrollUntilVisible` with `direction: UP` toward an item title present only in `GET /v1/sessions/<id>/items?before=<olderCursor>`; capture `Loading earlier messages…` if it shows.
+  Pass: `history-02-transcript` shows the transcript, `transcript-01-thought-expanded` shows `Thought ▴` with text matching the snapshot's newest thinking block, and `transcript-02-older-page` shows `<older title>`, which exists only in the older page.
+- **Empty history:** prepare a second run (`prepare-run.sh <RUN_ID>-empty <other port>`) and start its server supervised with `HOME=<its SCRATCH> OMP_MOBILE_HOME=<its OMP_MOBILE_HOME> bun server/src/main.ts`. Pair it with `pair-deeplink.yaml`; its session list shows `No sessions yet`, and `api.ts <RUN_ID>-empty get '/v1/sessions?limit=5'` returns no items. This replaces the first run's computer on the phone (SKILL.md Scope).
 
 ## Gotchas
 
 - Rows expose one accessibility string: `<title>, <project>, · <age>, <preview>`; select with `"<title>,.*"`. Titles repeat (`Untitled`, e2e prompts), so prefer a unique one.
 - The list is the invoking user's real `~/.omp/agent/sessions`, including sessions other agents are writing right now; their transcripts change while you look. Compare against a snapshot fetched at the same time.
-- A transcript is an inverted list: newest at the bottom, older pages above.
-- Header icons have no custom labels; Maestro sees their SF Symbol names `add` and `More`.
+- The transcript is an inverted list anchored at the bottom: expanding a thought grows it upward out of view. The flow swipes DOWN once to bring it back; Maestro counts the off-screen element as visible, so `scrollUntilVisible` alone never moves it.
+- The expanded thought element reads `brain, Thought ▴, <text>`, so match `(?s).*Thought ▴, .+`, not `.*Thought ▴`.
+- A long final reply can push every thought above the first screen; the flow scrolls up to the newest `Thought ▾` first.
+- On `main` at `3a90835`, the expanded thought renders inside a `rounded-full` pill that becomes a large ellipse across the text (fix in PR #9). Do not treat the ellipse as harness noise.
