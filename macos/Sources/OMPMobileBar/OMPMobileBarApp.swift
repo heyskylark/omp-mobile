@@ -12,6 +12,8 @@ struct OMPMobileBarApp: App {
                 Text("OMP Mobile")
             } icon: {
                 Image(nsImage: model.serverState.menuBarMark.image)
+                    .accessibilityLabel("OMP Mobile")
+                    .accessibilityValue(model.serverState.menuBarMark.accessibilityValue)
             }
         }
         .menuBarExtraStyle(.window)
