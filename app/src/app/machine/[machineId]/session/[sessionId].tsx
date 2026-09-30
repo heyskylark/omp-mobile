@@ -45,11 +45,11 @@ export default function SessionScreen() {
 		const { socket, release } = acquireMachineSocket(machine);
 		const unsubscribe = socket.subscribe(sessionId);
 		const offMessage = socket.onMessage((message: ServerMessage) => dispatch({ type: "server", message }));
-		const offEpoch = socket.onEpochChange(() => void loadSnapshot());
+		const offResync = socket.onResync(() => void loadSnapshot());
 		return () => {
 			unsubscribe();
 			offMessage();
-			offEpoch();
+			offResync();
 			release();
 		};
 	}, [machine, sessionId, loadSnapshot]);

@@ -380,6 +380,13 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			? `http://${tailscale.identity.dnsName}:${options.config.port}`
 			: `http://127.0.0.1:${options.config.port}`;
 	const websocket = {
+		// A suspended phone stops reading. Bun's defaults then silently drop sends past a 16 MiB backlog while the
+		// socket stays open, so the phone wakes to a stale state. Close it instead: the phone reconnects and
+		// resubscribes, and each resubscription sends a fresh snapshot. Only received frames (the phone's pings and
+		// pongs) keep a socket alive.
+		backpressureLimit: 4 * 1024 * 1024,
+		closeOnBackpressureLimit: true,
+		resetIdleTimeoutOnSend: false,
 		open(ws: Bun.ServerWebSocket<SocketData>) {
 			ws.data.unsubscribeBroadcast = options.hub.onBroadcast((message) => ws.send(JSON.stringify(message)));
 			ws.send(JSON.stringify({ type: "hello", epoch, info: serverInfo(options) } satisfies ServerMessage));
