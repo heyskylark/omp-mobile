@@ -1,6 +1,8 @@
 import type { SkillCommand } from "@omp-mobile/protocol";
 import { useEffect, useState } from "react";
-import type { OmpApi } from "./api";
+import type { PairedMachine } from "../native/types";
+import { OmpApi } from "./api";
+import { acquireMachineSocket } from "./live";
 
 const COMMAND = "/skill:";
 const SEPARATORS = new Set(["-", "_", ".", ":", "/", " "]);
@@ -78,25 +80,36 @@ export function completeSkill(text: string, token: SkillToken, name: string): { 
 
 const cache = new Map<string, SkillCommand[]>();
 
-/** Skills OMP offers in `cwd` on this computer; the last list shows immediately while a fresh one loads. */
-export function useSkills(api: OmpApi | null, machineId: string | undefined, cwd: string | undefined): SkillCommand[] {
-	const key = machineId && cwd ? `${machineId}\n${cwd}` : "";
+/**
+ * Skills OMP offers in `cwd` on this computer; the last list shows immediately while a fresh one loads. The list
+ * reloads after every reconnect, so a request that failed while the computer was asleep or restarting its server
+ * does not leave the menu empty until the screen is reopened.
+ */
+export function useSkills(machine: PairedMachine | undefined, cwd: string | undefined): SkillCommand[] {
+	const key = machine && cwd ? `${machine.machineId}\n${cwd}` : "";
 	const [skills, setSkills] = useState<SkillCommand[]>(() => cache.get(key) ?? []);
 	useEffect(() => {
 		setSkills(cache.get(key) ?? []);
-		if (!api || !cwd) return;
+		if (!machine || !cwd) return;
 		let active = true;
-		api
-			.skills(cwd)
-			.then((loaded) => {
-				cache.set(key, loaded);
-				if (active) setSkills(loaded);
-			})
-			// Completion is optional: an unreachable computer or older server leaves the menu empty.
-			.catch(() => undefined);
+		const api = new OmpApi(machine);
+		const load = () =>
+			api
+				.skills(cwd)
+				.then((loaded) => {
+					cache.set(key, loaded);
+					if (active) setSkills(loaded);
+				})
+				// Completion is optional: an unreachable computer or older server leaves the last list in place.
+				.catch(() => undefined);
+		void load();
+		const { socket, release } = acquireMachineSocket(machine);
+		const offResync = socket.onResync(() => void load());
 		return () => {
 			active = false;
+			offResync();
+			release();
 		};
-	}, [api, key, cwd]);
+	}, [machine, key, cwd]);
 	return skills;
 }

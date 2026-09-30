@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -21,8 +21,7 @@ export default function NewSessionScreen() {
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
 	const attachments = useImageAttachments();
-	const api = useMemo(() => (machine ? new OmpApi(machine) : null), [machine]);
-	const skills = useSkills(api, machineId, selected || undefined);
+	const skills = useSkills(machine, selected || undefined);
 	useEffect(() => {
 		if (cwd) setSelected(cwd);
 	}, [cwd]);
