@@ -11,6 +11,8 @@ The user adds a computer running the OMP Mobile server to the app with a one-tim
 - `pair-rejected`: a malformed link shows `That is not a valid OMP pairing link.`; a used or expired code shows `Pairing code is invalid or expired`. **Exercised** (`pair-rejected.yaml`, both cases).
 - `repair-replaces`: pairing again with a computer the phone already has (same server URL, valid saved token) replaces the phone's old server device instead of adding one. **Exercised** (`pair-deeplink.yaml` after `pair-typed.yaml`).
 - `remove-computer`: computer → ellipsis → `Remove computer` → `Remove computer?` → `Remove`; the app sends `DELETE /v1/devices/me`, removes the computer, and returns to Computers. **Exercised** (`remove-computer.yaml`).
+- `rename-computer`: computer → ellipsis → **Name** field → `Save`; the app sends `PUT /v1/machine/name`, the server writes `machineName` to its `config.json`, and the Computers row, the session list title, and the menu bar show the new name. **Exercised** (`rename-computer.yaml`).
+- `computer-name-refresh`: a rename made elsewhere (another phone, or `config.json` plus a server restart) reaches this phone the next time the Computers list loads, without pairing again. **Exercised** (`computer-name-refresh.yaml` after a probe-device rename).
 
 ## How to get to it (user POV)
 
@@ -54,6 +56,15 @@ Preconditions: Launch + Doctor passed. Every pairing flow answers the notificati
   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair-open .omp/skills/verify-omp-mobile/flows/open-add-computer.yaml
   printf %s '<link>' | xcrun simctl pbcopy <SIM_UDID>
   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-paste.yaml
+  ```
+
+- **Rename computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rename -e MACHINE_NAME=<MACHINE_NAME> -e 'NEW_NAME=<new name>' .omp/skills/verify-omp-mobile/flows/rename-computer.yaml`. Then `api.ts <RUN_ID> status` must report the new `machineName`, and `<OMP_MOBILE_HOME>/config.json` must hold it next to the run's other keys. Rename back (or use the new name as `MACHINE_NAME`) before recipes that select the computer by name; `doctor.ts` checks the name against `run.env`.
+- **Rename from elsewhere:** rename as the probe device, then relaunch the app:
+
+  ```sh
+  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get /v1/info   # pairs verify-probe once
+  curl -sS -X PUT -H "authorization: Bearer $(jq -r .token ~/.cache/omp-mobile-verify/<RUN_ID>/probe.json)" -H 'content-type: application/json' -d '{"machineName":"<other name>"}' http://127.0.0.1:<PORT>/v1/machine/name
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/name-refresh -e 'NEW_NAME=<other name>' .omp/skills/verify-omp-mobile/flows/computer-name-refresh.yaml
   ```
 
 - **Remove computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/remove -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/remove-computer.yaml`. The computer's `status` must lose that `iPhone` device. Run it last, or on a second run's server: every run on this Mac is the same computer to the app (SKILL.md Scope).
