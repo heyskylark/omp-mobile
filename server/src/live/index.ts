@@ -10,6 +10,7 @@ import type { SessionMeta } from "../history/api.ts";
 import { SessionActor } from "./actor.ts";
 import type { CreateLiveHub, ExtensionEvent, LiveHub, LiveNotification, LiveOptions } from "./api.ts";
 import { startLocalRelay, type LocalRelay } from "./relay.ts";
+import { SkillCatalog } from "./skills.ts";
 
 class Hub implements LiveHub {
 	#opts: LiveOptions;
@@ -20,9 +21,11 @@ class Hub implements LiveHub {
 	#problems: string[] = [];
 	#creating = new Map<string, Promise<SessionActor | null>>();
 	#provisional = new Set<string>();
+	#skills: SkillCatalog;
 
 	constructor(opts: LiveOptions) {
 		this.#opts = opts;
+		this.#skills = new SkillCatalog(opts.ompPath, opts.rpcArgs);
 	}
 	async start(): Promise<void> {
 		if (!this.#relay) this.#relay = startLocalRelay(this.#opts.relayPort);
@@ -161,6 +164,9 @@ class Hub implements LiveHub {
 	onNotify(listener: (notification: LiveNotification) => void): () => void {
 		this.#notifications.add(listener);
 		return () => this.#notifications.delete(listener);
+	}
+	skills(cwd: string) {
+		return this.#skills.list(cwd);
 	}
 	status() {
 		let server = 0,

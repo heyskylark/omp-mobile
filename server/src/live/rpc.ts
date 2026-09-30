@@ -25,8 +25,14 @@ export class RpcSupervisor {
 	#closed = false;
 	#stderr: Promise<string>;
 
-	constructor(args: string[], cwd: string) {
-		this.#proc = Bun.spawn(args, { cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+	constructor(args: string[], cwd: string, env?: Record<string, string>) {
+		this.#proc = Bun.spawn(args, {
+			cwd,
+			...(env ? { env: { ...process.env, ...env } } : {}),
+			stdin: "pipe",
+			stdout: "pipe",
+			stderr: "pipe",
+		});
 		this.pid = this.#proc.pid;
 		this.exited = this.#proc.exited;
 		this.#stderr = new Response(this.#proc.stderr).text();

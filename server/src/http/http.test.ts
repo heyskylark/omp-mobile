@@ -75,6 +75,9 @@ class FakeHub implements LiveHub {
 	onNotify(_listener: (notification: LiveNotification) => void) {
 		return () => {};
 	}
+	async skills() {
+		return [];
+	}
 	status() {
 		return { server: 0, terminal: 0, pending: 0, collabRelayUrl: "ws://127.0.0.1:8788", problems: [] };
 	}

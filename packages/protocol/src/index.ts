@@ -197,6 +197,17 @@ export interface ModelRoleResponse {
 	modelRole: ModelRole;
 }
 
+/** A skill OMP runs when a prompt contains `/skill:<name>`; user-level and project-level skills alike. */
+export interface SkillCommand {
+	name: string;
+	description?: string;
+}
+
+/** Response of `GET /v1/skills?cwd=<project>`: the skills an OMP session started in that project can invoke. */
+export interface SkillListResponse {
+	skills: SkillCommand[];
+}
+
 export interface RespondRequest {
 	operationId: string;
 	response: InteractionResponse;
