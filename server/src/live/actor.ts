@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
+	ImageAttachment,
 	PendingInteraction,
 	RespondRequest,
 	ResponseReceipt,
@@ -25,6 +26,12 @@ import { RpcSupervisor } from "./rpc.ts";
 import { publicLiveness, reduceOwnership, type OwnershipEvent, type OwnershipState } from "./state.ts";
 
 type Frame = Record<string, unknown>;
+
+/** OMP prompt fields for attached images: `images` carries OMP ImageContent blocks, omitted when there are none. */
+function ompImages(images: ImageAttachment[]): { images?: Array<{ type: "image" } & ImageAttachment> } {
+	return images.length ? { images: images.map((image) => ({ type: "image", ...image })) } : {};
+}
+
 type ActorHooks = {
 	changed(actor: SessionActor, transition: boolean): void;
 	notify(notification: LiveNotification): void;
@@ -82,7 +89,7 @@ export class SessionActor {
 	#rpc?: RpcSupervisor;
 	#collab?: CollabGuest;
 
-	async createNew(prompt: string, operationId: string): Promise<void> {
+	async createNew(prompt: string, operationId: string, images: ImageAttachment[]): Promise<void> {
 		if (this.sessionId) throw new Error("Actor already owns a session");
 		const args = [
 			this.#opts.ompPath,
@@ -118,7 +125,7 @@ export class SessionActor {
 		this.#transition({ type: "server.ready", pid: rpc.pid });
 		this.#startPolling();
 		this.#promptOperations.add(operationId);
-		await rpc.command({ id: operationId, type: "prompt", message: prompt });
+		await rpc.command({ id: operationId, type: "prompt", message: prompt, ...ompImages(images) });
 	}
 	#subscribers = new Set<(message: ServerMessage) => void>();
 	#pending = new Map<string, InteractionRecord>();
@@ -194,18 +201,24 @@ export class SessionActor {
 		};
 	}
 
-	async prompt(operationId: string, text: string): Promise<"accepted" | "duplicate"> {
+	async prompt(operationId: string, text: string, images: ImageAttachment[]): Promise<"accepted" | "duplicate"> {
 		if (this.#promptOperations.has(operationId)) return "duplicate";
 		this.#assertWritable();
 		this.#promptOperations.add(operationId);
 		try {
 			if (this.state.kind === "terminal") {
 				await this.#ensureCollab();
-				await this.#collab!.send({ t: "prompt", text });
+				await this.#collab!.send({ t: "prompt", text, ...ompImages(images) });
 			} else {
 				await this.#ensureRpc();
 				// A prompt that arrives mid-turn steers it; OMP rejects a bare prompt while streaming.
-				await this.#rpc!.command({ id: operationId, type: "prompt", message: text, streamingBehavior: "steer" });
+				await this.#rpc!.command({
+					id: operationId,
+					type: "prompt",
+					message: text,
+					streamingBehavior: "steer",
+					...ompImages(images),
+				});
 			}
 		} catch (error) {
 			this.#promptOperations.delete(operationId);

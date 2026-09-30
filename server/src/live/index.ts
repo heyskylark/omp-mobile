@@ -87,14 +87,14 @@ class Hub implements LiveHub {
 			this.#opts,
 			this.#hooks(),
 		);
-		await actor.createNew(req.prompt, req.operationId);
+		await actor.createNew(req.prompt, req.operationId, req.images ?? []);
 		this.#actors.set(actor.sessionId, actor);
 		this.#broadcast();
 		return { sessionId: actor.sessionId };
 	}
 	async prompt(sessionId: string, req: PromptRequest) {
 		const actor = await this.#required(sessionId);
-		return { state: await actor.prompt(req.operationId, req.text) };
+		return { state: await actor.prompt(req.operationId, req.text, req.images ?? []) };
 	}
 	async abort(sessionId: string): Promise<void> {
 		await (await this.#required(sessionId)).abort();

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
+	MAX_PROMPT_IMAGES,
 	PROTOCOL_VERSION,
 	encodePairingUrl,
 	type ApiError,
@@ -25,8 +26,23 @@ const PairSchema = z.object({
 	push: z.object({ token: z.string().min(1), environment: z.enum(["sandbox", "production"]) }).optional(),
 });
 const PushSchema = z.object({ token: z.string().min(1), environment: z.enum(["sandbox", "production"]) });
-const CreateSessionSchema = z.object({ operationId: z.string().min(1), cwd: z.string().min(1), prompt: z.string() });
-const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string() });
+// 12M base64 characters is about 9 MB of image data; the app sends downscaled JPEGs well under that.
+const ImagesSchema = z
+	.array(
+		z.object({
+			data: z.base64().max(12_000_000),
+			mimeType: z.enum(["image/jpeg", "image/png", "image/gif", "image/webp"]),
+		}),
+	)
+	.max(MAX_PROMPT_IMAGES)
+	.optional();
+const CreateSessionSchema = z.object({
+	operationId: z.string().min(1),
+	cwd: z.string().min(1),
+	prompt: z.string(),
+	images: ImagesSchema,
+});
+const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
 const ResponseSchema = z.object({
 	operationId: z.string().min(1),
 	response: z.discriminatedUnion("kind", [
