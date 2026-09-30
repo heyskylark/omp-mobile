@@ -12,6 +12,8 @@
     "expo-constants": "~55.0.17",
     "expo-dev-client": "~55.0.40",
     "expo-haptics": "~55.0.18",
+    "expo-image-manipulator": "~55.0.21",
+    "expo-image-picker": "~55.0.24",
     "expo-linking": "~55.0.17",
     "expo-router": "~55.0.18",
     "expo-status-bar": "~55.0.6",

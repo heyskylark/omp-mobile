@@ -157,15 +157,26 @@ export interface PairResponse {
 	pushKey: string;
 }
 
+/** An image sent with a prompt; forwarded to OMP as an image content block. */
+export interface ImageAttachment {
+	/** Base64 image data without a data: URI prefix. */
+	data: string;
+	mimeType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+}
+
+export const MAX_PROMPT_IMAGES = 4;
+
 export interface CreateSessionRequest {
 	operationId: string;
 	cwd: string;
 	prompt: string;
+	images?: ImageAttachment[];
 }
 
 export interface PromptRequest {
 	operationId: string;
 	text: string;
+	images?: ImageAttachment[];
 }
 
 export interface RespondRequest {
