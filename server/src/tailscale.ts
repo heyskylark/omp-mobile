@@ -36,7 +36,12 @@ export async function inspectTailscale(cli?: string | null): Promise<TailscaleSt
 	const executable = cli === undefined ? await findTailscaleCli() : cli;
 	if (!executable) return { kind: "unavailable", problem: "Tailscale CLI not found" };
 	try {
-		const proc = Bun.spawn([executable, "status", "--json"], { stdout: "pipe", stderr: "pipe" });
+		// The Tailscale.app binary only acts as a CLI when TERM is set; under launchd it tries to open the GUI instead.
+		const proc = Bun.spawn([executable, "status", "--json"], {
+			stdout: "pipe",
+			stderr: "pipe",
+			env: { ...process.env, TAILSCALE_BE_CLI: "1" },
+		});
 		const [stdout, stderr, exitCode] = await Promise.all([
 			new Response(proc.stdout).text(),
 			new Response(proc.stderr).text(),
