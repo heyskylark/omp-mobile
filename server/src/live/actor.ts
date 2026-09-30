@@ -204,7 +204,8 @@ export class SessionActor {
 				await this.#collab!.send({ t: "prompt", text });
 			} else {
 				await this.#ensureRpc();
-				await this.#rpc!.command({ id: operationId, type: "prompt", message: text });
+				// A prompt that arrives mid-turn steers it; OMP rejects a bare prompt while streaming.
+				await this.#rpc!.command({ id: operationId, type: "prompt", message: text, streamingBehavior: "steer" });
 			}
 		} catch (error) {
 			this.#promptOperations.delete(operationId);

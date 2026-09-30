@@ -23,7 +23,7 @@ The menu bar screenshots use sample data.
 ## What you get
 
 - **Session history.** Every OMP session on the computer, newest first, with titles and project folders. Transcripts load a page at a time as you scroll up, so a long session opens instantly.
-- **Live sessions.** Watch the agent stream text, thinking, and tool calls. Send follow-up prompts or stop a turn.
+- **Live sessions.** Watch the agent stream text, thinking, and tool calls. Send follow-up prompts, steer a running turn with a new message, or stop it.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.
@@ -266,4 +266,5 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - `scripts/testflight.sh` has not been run yet, because it needs your Apple and Expo accounts. The app config sets `aps-environment` to `development`, and App Store export is expected to switch it to `production` from the distribution profile. Confirm that with the first TestFlight build before relying on push.
 - Push delivery through APNs and decryption in the notification service extension have not been tested on a physical device. The Simulator shows the notification actions and runs the Approve action end to end, but it did not run the extension for `simctl push`.
 - A session opened in a terminal after the server started working on it is not blocked by OMP. The server marks it as a conflict, stops accepting phone input for it, and closes its own process when the turn settles.
+- In a session the server runs, an `ask` call with several questions cannot finish a multiple-choice question from the phone. OMP's RPC mode offers no **Done** option there and expects the terminal's → key to move on, which RPC cannot send. Tapping options only toggles them; answer with **Other…** to continue. Sessions driven through Collab offer **Next →** and are not affected.
 - There is no Apple Watch app yet.
