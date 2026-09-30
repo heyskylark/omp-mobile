@@ -5,12 +5,14 @@ import type {
 	NotificationOpen,
 	OmpNativeModule as OmpNativeContract,
 	PairedMachine,
+	PastedImage,
 } from "../../src/native/types";
 import type { PushEnvironment } from "@omp-mobile/protocol";
 
 type OmpNativeEvents = {
 	onNotificationOpen(open: NotificationOpen): void;
 	onActionResult(result: ActionResult): void;
+	onPasteImages(event: { images: PastedImage[] }): void;
 };
 
 declare class NativeOmpModule extends NativeModule<OmpNativeEvents> {
@@ -31,6 +33,7 @@ export const OmpNative: OmpNativeContract = {
 	consumeLaunchNotification: () => nativeModule.consumeLaunchNotification(),
 	addNotificationOpenListener: (listener) => nativeModule.addListener("onNotificationOpen", listener),
 	addActionResultListener: (listener) => nativeModule.addListener("onActionResult", listener),
+	addPasteImagesListener: (listener) => nativeModule.addListener("onPasteImages", listener),
 };
 
 export default OmpNative;

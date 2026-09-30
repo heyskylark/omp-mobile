@@ -190,6 +190,7 @@ export default function SessionScreen() {
 					disabled={sending}
 					images={attachments.images}
 					onAttach={attachments.attach}
+					onPasteImages={attachments.paste}
 					onRemoveImage={attachments.remove}
 				/>
 			</View>

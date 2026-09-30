@@ -115,6 +115,7 @@ export default function NewSessionScreen() {
 					disabled={!selected || state === "creating"}
 					images={attachments.images}
 					onAttach={attachments.attach}
+					onPasteImages={attachments.paste}
 					onRemoveImage={attachments.remove}
 				/>
 			</View>

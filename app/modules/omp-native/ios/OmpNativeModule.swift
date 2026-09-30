@@ -16,7 +16,7 @@ public final class OmpNativeModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("OmpNative")
-    Events("onNotificationOpen", "onActionResult")
+    Events("onNotificationOpen", "onActionResult", "onPasteImages")
 
     OnCreate {
       let center = NotificationCenter.default
@@ -28,6 +28,10 @@ public final class OmpNativeModule: Module {
         center.addObserver(forName: .ompActionResult, object: nil, queue: .main) { [weak self] note in
           guard let payload = note.userInfo as? [String: Any] else { return }
           self?.sendEvent("onActionResult", payload.mapValues { Optional($0) })
+        },
+        center.addObserver(forName: .ompPasteImages, object: nil, queue: .main) { [weak self] note in
+          guard let images = note.userInfo?["images"] as? [[String: Any]] else { return }
+          self?.sendEvent("onPasteImages", ["images": images])
         }
       ]
     }

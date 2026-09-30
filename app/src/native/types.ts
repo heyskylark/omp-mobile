@@ -30,6 +30,13 @@ export interface ActionResult {
 	message?: string;
 }
 
+/** An image pasted into a text field, saved by the native layer as a temporary JPEG. */
+export interface PastedImage {
+	uri: string;
+	width: number;
+	height: number;
+}
+
 export interface OmpNativeModule {
 	listMachines(): Promise<PairedMachine[]>;
 	saveMachine(machine: MachineSecretInput): Promise<void>;
@@ -40,4 +47,6 @@ export interface OmpNativeModule {
 	consumeLaunchNotification(): Promise<NotificationOpen | null>;
 	addNotificationOpenListener(listener: (open: NotificationOpen) => void): { remove(): void };
 	addActionResultListener(listener: (result: ActionResult) => void): { remove(): void };
+	/** Fires when the user chooses Paste in a text field while the clipboard holds only images. */
+	addPasteImagesListener(listener: (event: { images: PastedImage[] }) => void): { remove(): void };
 }
