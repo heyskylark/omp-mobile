@@ -148,6 +148,14 @@ export function Composer({
 		});
 		return () => subscription.remove();
 	}, []);
+	// Fabric measures a multiline TextInput from the last text the native view reported, so a field emptied from JS
+	// (after sending) keeps its old height until the input re-renders. Re-render it once with a new `nativeID`.
+	const [clears, setClears] = useState(0);
+	const hadText = useRef(Boolean(value));
+	useEffect(() => {
+		if (!value && hadText.current) setClears((count) => count + 1);
+		hadText.current = Boolean(value);
+	}, [value]);
 	const keyboardVisible = useKeyboardVisible();
 	// The open slider anchors to the panel, so the panel holds its shape until it closes.
 	const [pickerOpen, setPickerOpen] = useState(false);
@@ -211,6 +219,7 @@ export function Composer({
 								ref={input}
 								value={value}
 								onChangeText={onChangeText}
+								nativeID={`composer-input-${clears}`}
 								placeholder="Message OMP"
 								placeholderTextColor="#6F6F77"
 								multiline
