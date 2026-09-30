@@ -13,7 +13,21 @@ if [ -z "$DEVICE" ]; then
 fi
 
 cd "$ROOT/app"
-[ -d ios ] || bunx expo prebuild -p ios
+# app/ios is generated and gitignored, so an existing copy may come from other inputs: cloned into a new worktree from
+# another checkout, generated with a different OMP_BUNDLE_ID, or older than native files added since. Regenerate it
+# whenever the resolved app config or the native sources it is built from differ from the ones recorded at prebuild.
+STAMP=ios/.omp-prebuild-inputs
+INPUTS=$({
+	bunx expo config --type public --json
+	find app.config.ts package.json ../bun.lock plugins targets modules -type f ! -name .DS_Store -print0 | sort -z | xargs -0 shasum
+} | shasum | cut -d' ' -f1)
+if [ "$(cat "$STAMP" 2>/dev/null || true)" != "$INPUTS" ]; then
+	bunx expo prebuild -p ios --clean --no-install
+	# Run pod install here rather than inside prebuild, which reports success even when CocoaPods aborts (it does without
+	# a UTF-8 locale), leaving no workspace to build.
+	(cd ios && LC_ALL=en_US.UTF-8 pod install)
+	echo "$INPUTS" >"$STAMP"
+fi
 cd ios
 xcodebuild -workspace OMP.xcworkspace -scheme OMP -configuration Release -sdk iphonesimulator \
 	-destination "id=$DEVICE" -derivedDataPath build/simulator \

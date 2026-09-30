@@ -19,7 +19,7 @@ Every command runs from the repository root. `$RUN_ID` / `<RUN_ID>` is the run i
 
 ## Launch
 
-Run from the checkout under test (a feature worktree per `.omp/AGENTS.md`). In a fresh worktree run `bun install` first; the first `scripts/simulator.sh` there also runs `expo prebuild` because `app/ios` is not committed. Helpers resolve the repository from their own location, so invoke the copies inside the checkout under test.
+Run from the checkout under test (a feature worktree per `.omp/AGENTS.md`). In a fresh worktree run `bun install` first. `app/ios` is not committed; `scripts/simulator.sh` reruns `expo prebuild --clean` whenever it is missing or was generated from other inputs (for example cloned into a new worktree from another checkout, or built with a different `OMP_BUNDLE_ID`). Helpers resolve the repository from their own location, so invoke the copies inside the checkout under test.
 
 1. Prepare scratch, config, and evidence root (refuses busy ports or an existing run id):
 
