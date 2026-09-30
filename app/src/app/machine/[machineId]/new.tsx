@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -8,6 +8,7 @@ import { Composer, useImageAttachments } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
 import { OmpApi, operationId } from "../../../data/api";
 import { useMachine } from "../../../data/machines";
+import { useSkills } from "../../../data/skills";
 
 export default function NewSessionScreen() {
 	const { machineId, cwd } = useLocalSearchParams<{ machineId: string; cwd?: string }>();
@@ -20,6 +21,8 @@ export default function NewSessionScreen() {
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
 	const attachments = useImageAttachments();
+	const api = useMemo(() => (machine ? new OmpApi(machine) : null), [machine]);
+	const skills = useSkills(api, machineId, selected || undefined);
 	useEffect(() => {
 		if (cwd) setSelected(cwd);
 	}, [cwd]);
@@ -128,6 +131,7 @@ export default function NewSessionScreen() {
 					onRemoveImage={attachments.remove}
 					modelRole={modelRole}
 					onModelRoleChange={setModelRole}
+					skills={skills}
 				/>
 			</View>
 		</KeyboardAvoidingView>

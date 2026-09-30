@@ -13,6 +13,7 @@ import {
 	type ServerInfo,
 	type ServerMessage,
 	type SessionSummary,
+	type SkillListResponse,
 } from "@omp-mobile/protocol";
 import type { ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
@@ -323,6 +324,12 @@ export function createHttpHandler(
 				return json({ projects: await options.history.recentProjects(50) });
 			if (path === "/v1/fs/dirs" && req.method === "GET")
 				return json(await options.history.listDirectories(url.searchParams.get("path") ?? undefined));
+			if (path === "/v1/skills" && req.method === "GET") {
+				const cwd = url.searchParams.get("cwd");
+				if (!cwd) throw new HttpError(400, "bad_request", "cwd is required");
+				const skills = await options.hub.skills(await options.history.resolveProjectDir(cwd));
+				return json({ skills } satisfies SkillListResponse);
+			}
 			const itemsMatch = path.match(/^\/v1\/sessions\/([^/]+)\/items$/);
 			if (itemsMatch && req.method === "GET") {
 				return json(

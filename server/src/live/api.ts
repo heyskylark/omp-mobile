@@ -10,6 +10,7 @@ import type {
 	ServerMessage,
 	SessionSnapshot,
 	SessionSummary,
+	SkillCommand,
 } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
 
@@ -82,6 +83,8 @@ export interface LiveHub {
 	respond(sessionId: string, interactionId: string, req: RespondRequest): Promise<ResponseReceipt>;
 	ingest(event: ExtensionEvent): void;
 	onNotify(listener: (n: LiveNotification) => void): () => void;
+	/** The `/skill:<name>` commands OMP offers in `cwd`, an already validated project directory. */
+	skills(cwd: string): Promise<SkillCommand[]>;
 	status(): LiveStatus;
 }
 
