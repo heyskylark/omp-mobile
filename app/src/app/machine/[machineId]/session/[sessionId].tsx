@@ -3,7 +3,7 @@ import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, View 
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import * as Haptics from "expo-haptics";
-import type { InteractionResponse, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
+import type { InteractionResponse, ModelRole, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
 import { Composer, useImageAttachments } from "../../../../components/composer";
 import { InteractionPanel } from "../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../components/session-meta";
@@ -26,6 +26,7 @@ export default function SessionScreen() {
 	const [prompt, setPrompt] = useState("");
 	const [sending, setSending] = useState(false);
 	const [responding, setResponding] = useState(false);
+	const [changingRole, setChangingRole] = useState(false);
 	const attachments = useImageAttachments();
 	const list = useRef<FlatList<TimelineItem>>(null);
 	const loadSnapshot = useCallback(async () => {
@@ -151,6 +152,23 @@ export default function SessionScreen() {
 		void api
 			.abort(sessionId)
 			.catch((error) => show(error instanceof Error ? error.message : "Could not stop", "error"));
+	const changeModelRole = async (role: ModelRole) => {
+		const previous = view.modelRole;
+		dispatch({ type: "modelRole", modelRole: role });
+		setChangingRole(true);
+		void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+		try {
+			const result = await api.setModelRole(sessionId, role);
+			dispatch({ type: "modelRole", modelRole: result.modelRole });
+		} catch (error) {
+			dispatch({ type: "modelRole", modelRole: previous });
+			show(error instanceof Error ? error.message : "Could not change the model", "error");
+		} finally {
+			setChangingRole(false);
+		}
+	};
+	// The server refuses role changes for sessions it cannot drive.
+	const roleLocked = ["terminal", "conflict", "unavailable"].includes(view.session.liveness.kind);
 
 	const newestFirst = [...view.items].reverse();
 	return (
@@ -194,6 +212,9 @@ export default function SessionScreen() {
 					onAttach={attachments.attach}
 					onPasteImages={attachments.paste}
 					onRemoveImage={attachments.remove}
+					modelRole={view.modelRole}
+					onModelRoleChange={(role) => void changeModelRole(role)}
+					modelRoleDisabled={changingRole || roleLocked}
 				/>
 			</View>
 		</KeyboardAvoidingView>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
-import type { RecentProject } from "@omp-mobile/protocol";
+import type { ModelRole, RecentProject } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
 import { Composer, useImageAttachments } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
@@ -16,6 +16,7 @@ export default function NewSessionScreen() {
 	const [projects, setProjects] = useState<RecentProject[]>([]);
 	const [selected, setSelected] = useState(cwd ?? "");
 	const [prompt, setPrompt] = useState("");
+	const [modelRole, setModelRole] = useState<ModelRole>("default");
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
 	const attachments = useImageAttachments();
@@ -48,6 +49,7 @@ export default function NewSessionScreen() {
 				cwd: selected,
 				prompt: prompt.trim(),
 				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
+				...(modelRole === "default" ? {} : { modelRole }),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 			router.replace({
@@ -119,6 +121,8 @@ export default function NewSessionScreen() {
 					onAttach={attachments.attach}
 					onPasteImages={attachments.paste}
 					onRemoveImage={attachments.remove}
+					modelRole={modelRole}
+					onModelRoleChange={setModelRole}
 				/>
 			</View>
 		</KeyboardAvoidingView>
