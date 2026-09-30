@@ -95,18 +95,29 @@ export class RpcSupervisor {
 		return code;
 	}
 
-	async #dispatch(frame: Frame): Promise<void> {
+	/**
+	 * Handlers run in frame order but are not awaited, and their failures are logged: one slow or failing handler must
+	 * not stall the stream or end it, or every later event and command response would be lost.
+	 */
+	#dispatch(frame: Frame): void {
 		for (const waiter of [...this.#waiters]) {
 			if (!waiter.predicate(frame)) continue;
 			clearTimeout(waiter.timer);
 			this.#waiters.delete(waiter);
 			waiter.resolve(frame);
 		}
-		for (const handler of this.#handlers) await handler(frame);
+		for (const handler of this.#handlers) {
+			const failed = (error: unknown) => console.error(`OMP ${String(frame.type)} frame handler failed`, error);
+			try {
+				Promise.resolve(handler(frame)).catch(failed);
+			} catch (error) {
+				failed(error);
+			}
+		}
 	}
 
-	async #accept(frame: Frame): Promise<void> {
-		if (frame.type !== "rpc_chunk") return await this.#dispatch(frame);
+	#accept(frame: Frame): void {
+		if (frame.type !== "rpc_chunk") return this.#dispatch(frame);
 		if (
 			typeof frame.chunkId !== "string" ||
 			typeof frame.index !== "number" ||
@@ -130,13 +141,14 @@ export class RpcSupervisor {
 		const bytes = Buffer.concat(set.parts.map((part) => Buffer.from(part!, "base64")));
 		if (bytes.byteLength !== set.byteLength) return;
 		const parsed: unknown = JSON.parse(bytes.toString("utf8"));
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) await this.#dispatch(parsed as Frame);
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) this.#dispatch(parsed as Frame);
 	}
 
 	async #read(): Promise<void> {
 		const reader = this.#proc.stdout.getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
+		let failure = new Error("omp closed its RPC output");
 		try {
 			for (;;) {
 				const chunk = await reader.read();
@@ -148,16 +160,21 @@ export class RpcSupervisor {
 					const line = buffer.slice(0, newline).trim();
 					buffer = buffer.slice(newline + 1);
 					if (!line) continue;
-					const parsed: unknown = JSON.parse(line);
-					if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) await this.#accept(parsed as Frame);
+					try {
+						const parsed: unknown = JSON.parse(line);
+						if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) this.#accept(parsed as Frame);
+					} catch (error) {
+						console.error(`Skipping an unreadable OMP RPC line: ${line.slice(0, 200)}`, error);
+					}
 				}
 			}
 		} catch (error) {
-			for (const waiter of this.#waiters) {
-				clearTimeout(waiter.timer);
-				waiter.reject(error instanceof Error ? error : new Error(String(error)));
-			}
-			this.#waiters.clear();
+			failure = error instanceof Error ? error : new Error(String(error));
 		}
+		for (const waiter of this.#waiters) {
+			clearTimeout(waiter.timer);
+			waiter.reject(failure);
+		}
+		this.#waiters.clear();
 	}
 }

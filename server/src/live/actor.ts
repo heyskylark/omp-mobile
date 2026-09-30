@@ -66,6 +66,11 @@ function messageTimestamp(message: unknown): number {
 			: Date.now();
 }
 
+/** Run number of a live assistant item id (`live:<run>:<key>`). */
+function liveRun(liveId: string): number {
+	return Number(liveId.split(":")[1]);
+}
+
 function outputText(value: unknown): string {
 	if (typeof value === "string") return value;
 	if (value && typeof value === "object" && "content" in value) {
@@ -160,6 +165,8 @@ export class SessionActor {
 	#handoffWait?: { promise: Promise<void>; resolve: () => void };
 	#responseEvidence = new Map<string, () => void>();
 	#rpcBusy = false;
+	#reconcileRequest?: { retireThrough?: number };
+	#reconciling?: Promise<void>;
 	/** Role applied through this actor's rpc child; history is authoritative once the child is gone. */
 	#modelRole?: ModelRole;
 
@@ -395,12 +402,13 @@ export class SessionActor {
 					frame.id === id && (frame.type === "prompt_result" || (frame.type === "response" && frame.success === false)),
 				30_000,
 			);
+			// Awaited below only when the command succeeds; an unobserved rejection would crash the server.
+			settled.catch(() => undefined);
 			const response = await rpc.command(
 				{ id, type: "prompt", message: `/${MODEL_ROLE_COMMAND} ${role}`, streamingBehavior: "steer" },
 				30_000,
 			);
 			if (response.success !== true) {
-				settled.catch(() => undefined);
 				throw new Error(String(response.error ?? "OMP rejected the model change"));
 			}
 			const result = await settled;
@@ -437,10 +445,10 @@ export class SessionActor {
 		if (this.state.kind === "terminal") this.#transition({ type: "terminal.detached" });
 	}
 
-	async #onCollab(frame: Frame): Promise<void> {
+	#onCollab(frame: Frame): void {
 		if (frame.t === "event" && frame.event && typeof frame.event === "object") {
 			this.#resolveResponseEvidence();
-			await this.#onFrame(frame.event as Frame, "collab");
+			this.#onFrame(frame.event as Frame, "collab");
 		} else if (frame.t === "ui-request") {
 			this.#resolveResponseEvidence();
 			const request = normalizeCollabUiRequest(frame);
@@ -450,11 +458,12 @@ export class SessionActor {
 			this.#closeSourceRequest(frame.reqId, false);
 		} else if (frame.t === "entry") {
 			this.#resolveResponseEvidence();
-			await this.#reconcile();
+			void this.#reconcile();
 		}
 	}
 
-	async #onFrame(frame: Frame, transport: "rpc" | "collab"): Promise<void> {
+	/** Synchronous so every frame is handled in order; history reads run in the serialized reconcile loop. */
+	#onFrame(frame: Frame, transport: "rpc" | "collab"): void {
 		this.#resolveResponseEvidence();
 		if (frame.type === "extension_ui_request") {
 			const request = normalizeRpcUiRequest(frame);
@@ -473,9 +482,8 @@ export class SessionActor {
 			this.#upsertTool(frame, frame.isError === true ? "failed" : "succeeded");
 		else if (frame.type === "agent_end") {
 			this.#rpcBusy = false;
-			await this.#reconcile(true);
 			if (this.state.kind === "server") this.#transition({ type: "server.settling" });
-			await this.#notifyFinished();
+			void this.#reconcile(this.#run).then(() => this.#notifyFinished());
 		} else if (frame.type === "session_settled") {
 			this.#rpcBusy = false;
 			if (this.state.kind === "server") this.#transition({ type: "server.ready" });
@@ -619,25 +627,56 @@ export class SessionActor {
 		this.#responseEvidence.clear();
 	}
 
-	async #reconcile(retireAll = false): Promise<void> {
+	/**
+	 * Merges durable history into the live view. Calls coalesce into one read loop so the 400 ms poll never overlaps
+	 * itself or a turn's final read. `retireThrough` retires the live items of that run and earlier ones.
+	 */
+	#reconcile(retireThrough?: number): Promise<void> {
+		const request = this.#reconcileRequest ?? {};
+		if (retireThrough !== undefined) request.retireThrough = Math.max(request.retireThrough ?? 0, retireThrough);
+		this.#reconcileRequest = request;
+		this.#reconciling ??= this.#drainReconciles().finally(() => {
+			this.#reconciling = undefined;
+			if (this.#reconcileRequest) void this.#reconcile();
+		});
+		return this.#reconciling;
+	}
+
+	async #drainReconciles(): Promise<void> {
+		while (this.#reconcileRequest) {
+			const { retireThrough } = this.#reconcileRequest;
+			this.#reconcileRequest = undefined;
+			try {
+				await this.#reconcileOnce(retireThrough);
+			} catch (error) {
+				console.error(`Could not read the history of session ${this.sessionId}`, error);
+			}
+		}
+	}
+
+	async #reconcileOnce(retireThrough: number | undefined): Promise<void> {
 		const tail = await this.#opts.history.readTail(this.sessionId, { afterEntryId: this.#lastEntryId, limit: 500 });
 		if (tail.lastEntryId) this.#lastEntryId = tail.lastEntryId;
+		const ended = (liveId: string) => retireThrough !== undefined && liveRun(liveId) <= retireThrough;
 		const retire: string[] = [];
 		for (const [liveId, key] of this.#messageKeys)
 			if (
-				retireAll ||
+				ended(liveId) ||
 				tail.messageKeys.some((durable) => durable.role === key.role && durable.timestamp === key.timestamp)
 			) {
 				retire.push(liveId);
 				this.#messageKeys.delete(liveId);
 				this.#live.delete(liveId);
 			}
-		if (retireAll)
-			for (const [id, item] of this.#live)
-				if (item.kind === "assistant") {
-					retire.push(id);
-					this.#live.delete(id);
-				}
+		for (const [id, item] of this.#live) {
+			if (item.kind === "assistant" && ended(id)) {
+				retire.push(id);
+				this.#live.delete(id);
+			}
+			// A finished tool is durable under the same id once its turn ends, so the phone keeps it. Keeping it here
+			// too would make every later snapshot append it after newer history.
+			else if (item.kind === "tool" && item.state !== "running" && retireThrough !== undefined) this.#live.delete(id);
+		}
 		if (retire.length) this.#emit({ type: "timeline.retire", sessionId: this.sessionId, ids: retire });
 		if (tail.items.length) this.#emit({ type: "timeline.upsert", sessionId: this.sessionId, items: tail.items });
 	}
@@ -719,8 +758,12 @@ export class SessionActor {
 		};
 		poll();
 	}
+	/** Never rejects: it runs detached from frame handling, where an unobserved rejection would crash the server. */
 	async #notifyFinished(): Promise<void> {
-		const tail = await this.#opts.history.readTail(this.sessionId, { limit: 20 });
+		const tail = await this.#opts.history.readTail(this.sessionId, { limit: 20 }).catch((error) => {
+			console.error(`Could not read the history of session ${this.sessionId}`, error);
+			return { items: [] };
+		});
 		const assistant = [...tail.items].reverse().find((item) => item.kind === "assistant");
 		const body =
 			assistant?.kind === "assistant"
