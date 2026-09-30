@@ -2,6 +2,8 @@ import type { ExpoConfig } from "expo/config";
 
 const bundleIdentifier = process.env.OMP_BUNDLE_ID ?? "com.heyskylark.ompmobile";
 const sharedSuffix = `${bundleIdentifier}.shared`;
+// Free Apple accounts (Xcode Personal Teams) cannot sign the Push Notifications capability.
+const personalTeam = process.env.OMP_PERSONAL_TEAM === "1";
 
 const config: ExpoConfig = {
 	name: "OMP",
@@ -19,7 +21,7 @@ const config: ExpoConfig = {
 		appleTeamId: process.env.APPLE_TEAM_ID,
 		supportsTablet: true,
 		entitlements: {
-			"aps-environment": "development",
+			...(personalTeam ? {} : { "aps-environment": "development" }),
 			"keychain-access-groups": [`$(AppIdentifierPrefix)${sharedSuffix}`],
 			"com.apple.security.application-groups": [`group.${bundleIdentifier}`],
 		},
