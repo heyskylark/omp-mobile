@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { createHistory } from "./history/index.ts";
@@ -9,6 +9,7 @@ import { startHttp, type HttpService } from "./http/index.ts";
 import { createLiveHub } from "./live/index.ts";
 import { createPushService, type PushService } from "./push/index.ts";
 import { createDeviceStore } from "./store/index.ts";
+import { writePrivateJson } from "./private-json.ts";
 
 async function ompVersion(path: string | null): Promise<string | null> {
 	if (!path) return null;
@@ -19,14 +20,6 @@ async function ompVersion(path: string | null): Promise<string | null> {
 	} catch {
 		return null;
 	}
-}
-
-async function atomicPrivateJson(path: string, value: unknown): Promise<void> {
-	await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-	const temp = `${path}.${process.pid}.tmp`;
-	await writeFile(temp, JSON.stringify(value, null, 2) + "\n", { mode: 0o600 });
-	await chmod(temp, 0o600);
-	await rename(temp, path);
 }
 
 async function main(): Promise<void> {
@@ -68,7 +61,7 @@ async function main(): Promise<void> {
 			extensionToken,
 		});
 		if (config.apns) push = createPushService(config.apns, machineId, devices, hub);
-		await atomicPrivateJson(serverPath, {
+		await writePrivateJson(serverPath, {
 			port: config.port,
 			relayPort: config.relayPort,
 			pid: process.pid,
