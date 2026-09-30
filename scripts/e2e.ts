@@ -1,6 +1,7 @@
 import { chmod, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import type { SkillListResponse } from "@omp-mobile/protocol";
 
 const repo = resolve(import.meta.dir, "..");
 const home = process.env.OMP_MOBILE_E2E_HOME ?? "/tmp/omp-mobile-e2e-agent/home";
@@ -352,6 +353,22 @@ async function phaseB(): Promise<string> {
 		epoch: hello.epoch,
 		capabilities: hello.info?.capabilities,
 	});
+	const skillDir = join(scratchServer, ".omp", "skills", "e2e-again");
+	await mkdir(skillDir, { recursive: true });
+	await writeFile(
+		join(skillDir, "SKILL.md"),
+		"---\nname: e2e-again\ndescription: E2E project skill that replies with one word.\n---\n\nReply with the word again. Do not use tools.\n",
+	);
+	const { skills }: SkillListResponse = await ok(`/v1/skills?cwd=${encodeURIComponent(scratchServer)}`);
+	assert(
+		skills.some((skill) => skill.name === "e2e-again" && skill.description?.includes("one word")),
+		"skills endpoint lists the project skill",
+		skills.map((skill) => skill.name),
+	);
+	// The probe is a throwaway omp; a globally installed extension must not report it as a session.
+	await Bun.sleep(1_000);
+	const probed = await ok(`/v1/sessions?project=${encodeURIComponent(scratchServer)}`);
+	assert(probed.items.length === 0, "skill probe leaves no session behind", probed.items);
 	const created = await ok("/v1/sessions", {
 		method: "POST",
 		body: jsonBody({
@@ -424,16 +441,21 @@ async function phaseB(): Promise<string> {
 	assert(JSON.stringify(duplicate) === JSON.stringify(receipt), "interaction response is idempotent", duplicate);
 	const follow = await ok(`/v1/sessions/${encodeURIComponent(sessionId)}/prompt`, {
 		method: "POST",
-		body: jsonBody({ operationId: "again-e2e", text: "Reply with the word again." }),
+		body: jsonBody({ operationId: "again-e2e", text: "/skill:e2e-again" }),
 	});
-	assert(follow.state === "accepted", "follow-up prompt accepted", follow);
+	assert(follow.state === "accepted", "follow-up skill prompt accepted", follow);
 	const again = await settle(sessionId, (page) =>
 		page.items.some((item: any) => item.kind === "assistant" && /\bagain\b/i.test(textOf(item))),
 	);
 	assert(
 		again.items.some((item: any) => item.kind === "assistant" && /\bagain\b/i.test(textOf(item))),
-		"follow-up assistant reply observed",
+		"skill follow-up assistant reply observed",
 		"again",
+	);
+	assert(
+		again.items.some((item: any) => item.kind === "user" && textOf(item) === "/skill:e2e-again"),
+		"skill prompt shows as the typed command",
+		again.items.filter((item: any) => item.kind === "user").map(textOf),
 	);
 	await ok(`/v1/sessions/${encodeURIComponent(sessionId)}/handoff`, { method: "POST" });
 	const idle = await waitFor(

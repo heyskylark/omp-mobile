@@ -229,6 +229,36 @@ describe("OMP JSONL history", () => {
 			]);
 	});
 
+	test("shows a /skill: prompt as the text the user typed, not the expanded skill", async () => {
+		const { history, file } = await fixture();
+		let parentId = "c1";
+		const append = async (id: string, entry: Record<string, unknown>) => {
+			await appendFile(file, `${JSON.stringify({ id, parentId, timestamp: "2026-01-01T00:00:07.000Z", ...entry })}\n`);
+			parentId = id;
+		};
+		await appendFile(file, "}\n");
+		const skill = (id: string, attribution: string) =>
+			append(id, {
+				type: "custom_message",
+				customType: "skill-prompt",
+				content: '[IMPORTANT: User invoked the "review" skill; follow its instructions.]\n\n# Review\n...',
+				display: true,
+				details: { name: "review", args: "the auth module", prompt: "/skill:review the auth module" },
+				attribution,
+			});
+		await skill("s1", "user");
+		await skill("s2", "agent");
+		const page = await history.readTimeline("session-1", { limit: 50 });
+		const tail = await history.readTail("session-1", { afterEntryId: "c1", limit: 50 });
+		for (const items of [page.items, tail.items]) {
+			expect(items.find((item) => item.id === "e:s1")).toMatchObject({
+				kind: "user",
+				blocks: [{ kind: "text", text: "/skill:review the auth module" }],
+			});
+			expect(items.find((item) => item.id === "e:s2")).toMatchObject({ kind: "event" });
+		}
+	});
+
 	test("lists metadata and confines directory browsing across symlinks", async () => {
 		const { root, project, history } = await fixture();
 		const list = await history.listSessions({ limit: 30 });

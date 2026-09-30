@@ -200,6 +200,12 @@ export function mapEntry(
 	if (entry.type === "custom_message") {
 		if (entry.customType === "collab-prompt")
 			return [{ id: `e:${entry.id}`, kind: "user", at, blocks: blocks(entry.content) }];
+		// `/skill:<name>` typed by the user: show what they typed, not the expanded SKILL.md body OMP sends the model.
+		if (entry.customType === "skill-prompt" && entry.attribution === "user") {
+			const details = (entry.details ?? {}) as Record<string, unknown>;
+			if (typeof details.prompt === "string")
+				return [{ id: `e:${entry.id}`, kind: "user", at, blocks: [{ kind: "text", text: details.prompt }] }];
+		}
 		if (entry.display === false) return [];
 		return [
 			{
