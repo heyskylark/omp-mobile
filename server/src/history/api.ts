@@ -1,4 +1,11 @@
-import type { DirectoryListing, RecentProject, SessionStatus, TimelineItem, TimelinePage } from "@omp-mobile/protocol";
+import type {
+	DirectoryListing,
+	ModelRole,
+	RecentProject,
+	SessionStatus,
+	TimelineItem,
+	TimelinePage,
+} from "@omp-mobile/protocol";
 
 /** Everything the server knows about a session from its JSONL file alone. */
 export interface SessionMeta {
@@ -33,6 +40,8 @@ export interface History {
 	readTimeline(id: string, opts: { before?: string; limit: number }): Promise<TimelinePage>;
 	/** Items on the active chain after `afterEntryId` (all items when absent, bounded by `limit`). */
 	readTail(id: string, opts: { afterEntryId?: string; limit: number }): Promise<DurableTail>;
+	/** Active model role on the session's current branch; null when it runs a model picked outside those roles. */
+	readModelRole(id: string): Promise<ModelRole | null>;
 	recentProjects(limit: number): Promise<RecentProject[]>;
 	listDirectories(path: string | undefined): Promise<DirectoryListing>;
 	/** Resolve and validate a cwd for a new session: must be an existing directory inside the allowed roots. */

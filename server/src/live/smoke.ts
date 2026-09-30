@@ -115,6 +115,9 @@ const history: History = {
 	readTail(_id, options) {
 		return durableTail(options.afterEntryId);
 	},
+	async readModelRole() {
+		return "default" as const;
+	},
 	async recentProjects() {
 		return [];
 	},

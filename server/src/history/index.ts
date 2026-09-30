@@ -71,6 +71,10 @@ export function createHistory(options: HistoryOptions): History {
 			if (!session) return { items: [], messageKeys: [] };
 			return pager.tail(session.file, opts.afterEntryId, opts.limit);
 		},
+		async readModelRole(id) {
+			const session = await catalog.find(id);
+			return session ? pager.modelRole(session.file) : "default";
+		},
 		async recentProjects(limit) {
 			const usable = [];
 			for (const project of await catalog.recentProjects(Number.MAX_SAFE_INTEGER)) {

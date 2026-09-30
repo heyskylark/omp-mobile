@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { open, stat } from "node:fs/promises";
-import type { TimelineItem } from "@omp-mobile/protocol";
+import { MODEL_ROLES, type ModelRole, type TimelineItem } from "@omp-mobile/protocol";
 import type { DurableTail } from "./api";
 import { mapEntry, messageKey, parseLine, type RawEntry } from "./jsonl";
 
@@ -43,6 +43,11 @@ export class InvalidHistoryCursorError extends Error {
 function cursorPart(value: string | Buffer) {
 	return Buffer.from(value).toString("base64url");
 }
+
+/** Custom entry the OMP Mobile extension appends after switching roles; keep in sync with `extension/omp-mobile.ts`. */
+const MODEL_ROLE_ENTRY = "omp-mobile-model-role";
+/** OMP records transient retry-fallback models (and the switch back) under this role; they never change the role. */
+const FALLBACK_ROLE = "fallback";
 
 export class SessionPager {
 	readonly #secret: Uint8Array;
@@ -252,5 +257,26 @@ export class SessionPager {
 			messageKeys: messageKeys.filter((key) => included.has(key.itemId)),
 			...(active.length ? { lastEntryId: index.entries[active.at(-1)!]?.id } : {}),
 		};
+	}
+
+	/**
+	 * The newest role-bearing entry on the active chain decides. Extension switches record `model_change` with
+	 * OMP's default role followed by our custom entry; terminal role cycling records the role on `model_change`.
+	 */
+	async modelRole(file: string): Promise<ModelRole | null> {
+		const index = await this.#index(file);
+		const active = this.#active(index);
+		for (let activeOrdinal = active.length - 1; activeOrdinal >= 0; activeOrdinal--) {
+			const descriptor = index.entries[active[activeOrdinal]!];
+			if (descriptor?.type !== "custom" && descriptor?.type !== "model_change") continue;
+			const entry = await this.#readEntry(file, descriptor);
+			let role: unknown;
+			if (entry?.type === "custom" && entry.customType === MODEL_ROLE_ENTRY)
+				role = (entry.data as Record<string, unknown> | undefined)?.role;
+			else if (entry?.type === "model_change" && entry.role !== FALLBACK_ROLE) role = entry.role ?? "default";
+			else continue;
+			return MODEL_ROLES.find((candidate) => candidate === role) ?? null;
+		}
+		return "default";
 	}
 }
