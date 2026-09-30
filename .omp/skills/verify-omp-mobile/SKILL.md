@@ -37,7 +37,7 @@ Run from the checkout under test (a feature worktree per `.omp/AGENTS.md`). In a
 
    The ready line prints the pairing URL host: `http://<mac>.<tailnet>.ts.net:<PORT>` when Tailscale is connected, `http://127.0.0.1:<PORT>` otherwise. Both work from the Simulator on this Mac. Logs: `read proc://omp-mobile-verify-server-$RUN_ID`.
 
-3. Create and boot the run's simulator (prints its UDID, appends `SIM_UDID` to `run.env`):
+3. Create and boot the run's simulator on the newest installed iOS 26.x runtime (prints its UDID, appends `SIM_UDID` to `run.env`; exits naming the missing runtime if no iOS 26.x runtime is available). Never let `simctl` pick the newest runtime: the Release app crashes at launch on iOS 27.
 
    ```sh
    .omp/skills/verify-omp-mobile/bin/sim-create.sh "$RUN_ID"            # optional 2nd arg: device type name
@@ -61,7 +61,7 @@ Read-only. Run before the first drive and after any surprising failure:
 .omp/skills/verify-omp-mobile/bin/doctor.ts "$RUN_ID"                  # --no-sim before step 3 of Launch
 ```
 
-Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's and `Booted`; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro and Java work. A `FAIL` names the fix.
+Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's, `Booted`, and on an iOS 26.x runtime; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro and Java work. A `FAIL` names the fix.
 
 ## Drive
 
@@ -127,7 +127,7 @@ All in `.omp/skills/verify-omp-mobile/bin/`, executable, invoked exactly as abov
 | Helper | Does |
 |---|---|
 | `prepare-run.sh <run-id> [port]` | scratch home/config/project, `collab.yml`, evidence root, `run.env` |
-| `sim-create.sh <run-id> [device type]` | create + boot `omp-verify-<run-id>`, record `SIM_UDID` |
+| `sim-create.sh <run-id> [device type]` | create + boot `omp-verify-<run-id>` on the newest iOS 26.x runtime, record `SIM_UDID` |
 | `doctor.ts <run-id> [--no-sim]` | read-only readiness check |
 | `api.ts <run-id> pair-link \| status \| get </v1/…>` | one-time pairing link; admin status; probe-device GETs |
 | `texts.ts [hierarchy.json]` | compact Maestro hierarchy (stdin or file) |

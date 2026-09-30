@@ -61,6 +61,7 @@ const config: ExpoConfig = {
 		],
 		["expo-build-properties", { ios: { deploymentTarget: "16.0" } }],
 		"./plugins/with-pod-deployment-target",
+		"./plugins/with-scene-lifecycle",
 	],
 };
 

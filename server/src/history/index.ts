@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import type { History, HistoryOptions, SessionMetaPage } from "./api";
 import { SessionCatalog } from "./catalog";
-import { DirectoryBrowser, ProjectPathError } from "./directories";
+import { DirectoryBrowser, ProjectPathError, privacyGuarded } from "./directories";
 import { filterSessions, sessionFilter, type SessionFilter } from "./filter";
 import { InvalidHistoryCursorError, SessionPager } from "./pager";
 
@@ -39,6 +39,7 @@ export function createHistory(options: HistoryOptions): History {
 	const directories = new DirectoryBrowser(options.roots, async () => {
 		const paths = await Promise.all(
 			(await catalog.all()).map(async (meta) => {
+				if (privacyGuarded(meta.cwd)) return meta.cwd;
 				try {
 					return await realpath(meta.cwd);
 				} catch {
