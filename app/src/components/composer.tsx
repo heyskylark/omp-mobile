@@ -1,4 +1,5 @@
-import { MAX_PROMPT_IMAGES, type ModelRole } from "@omp-mobile/protocol";
+import { MAX_PROMPT_IMAGES, type ModelRole, type SkillCommand } from "@omp-mobile/protocol";
+import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import { Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
@@ -14,8 +15,10 @@ import Animated, {
 } from "react-native-reanimated";
 import { OmpNative } from "../../modules/omp-native";
 import { pickFromLibrary, prepareImage, type PickedImage } from "../data/attachments";
+import { completeSkill, rankSkills, skillToken } from "../data/skills";
 import type { PastedImage } from "../native/types";
 import { ModelRoleButton } from "./model-role-picker";
+import { SkillMenu } from "./skill-menu";
 import { useToast } from "./toast";
 import { Icon } from "./ui";
 
@@ -122,6 +125,7 @@ export function Composer({
 	modelRole,
 	onModelRoleChange,
 	modelRoleDisabled,
+	skills = [],
 }: {
 	value: string;
 	onChangeText(value: string): void;
@@ -136,6 +140,8 @@ export function Composer({
 	modelRole: ModelRole | null;
 	onModelRoleChange(role: ModelRole): void;
 	modelRoleDisabled?: boolean;
+	/** Skills offered after `/skill:`; none hides the completion menu. */
+	skills?: readonly SkillCommand[];
 }) {
 	const input = useRef<TextInput>(null);
 	const panel = useRef<View>(null);
@@ -161,6 +167,34 @@ export function Composer({
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const hasContent = Boolean(value.trim()) || images.length > 0;
 	const compact = !keyboardVisible && !value && !images.length && !pickerOpen;
+	// The caret decides which `/skill:` token the menu completes. Selection events can trail `onChangeText` by a
+	// render, so the caret is clamped to the text.
+	const [selection, setSelection] = useState({ start: value.length, end: value.length });
+	const pendingCaret = useRef<number | null>(null);
+	useEffect(() => {
+		const caret = pendingCaret.current;
+		if (caret === null) return;
+		pendingCaret.current = null;
+		input.current?.setSelection(caret, caret);
+		setSelection({ start: caret, end: caret });
+	}, [value]);
+	const token =
+		skills.length && keyboardVisible && selection.start === selection.end
+			? skillToken(value, Math.min(selection.end, value.length))
+			: null;
+	const matches = token ? rankSkills(skills, token.query) : [];
+	const pickSkill = (name: string) => {
+		if (!token) return;
+		const next = completeSkill(value, token, name);
+		void Haptics.selectionAsync();
+		if (next.text === value) {
+			input.current?.setSelection(next.caret, next.caret);
+			setSelection({ start: next.caret, end: next.caret });
+			return;
+		}
+		pendingCaret.current = next.caret;
+		onChangeText(next.text);
+	};
 
 	const attach =
 		images.length < MAX_PROMPT_IMAGES ? (
@@ -191,63 +225,67 @@ export function Composer({
 	// Every child sits in a fixed slot so the TextInput keeps its identity (and the keyboard) across the morph.
 	return (
 		<LayoutAnimationConfig skipEntering>
-			<View ref={panel} collapsable={false}>
-				<Animated.View layout={MORPH} style={[styles.shell, compact ? styles.pill : styles.panel]}>
-					{images.length ? (
-						<Animated.View entering={FadeIn.springify()} exiting={FadeOut.duration(120)} layout={MORPH}>
-							<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pt-1">
-								{images.map((image, index) => (
-									<View key={image.uri}>
-										<Image source={{ uri: image.uri }} className="h-16 w-16 rounded-xl bg-surface-raised" />
-										<Pressable
-											accessibilityLabel="Remove image"
-											onPress={() => onRemoveImage(index)}
-											hitSlop={8}
-											className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full bg-ink/80"
-										>
-											<Icon name="xmark" size={9} />
-										</Pressable>
-									</View>
-								))}
-							</ScrollView>
-						</Animated.View>
-					) : null}
-					<Animated.View layout={MORPH} style={styles.inputRow}>
-						{compact ? attach : null}
-						<Animated.View layout={MORPH} style={styles.inputSlot}>
-							<TextInput
-								ref={input}
-								value={value}
-								onChangeText={onChangeText}
-								nativeID={`composer-input-${clears}`}
-								placeholder="Message OMP"
-								placeholderTextColor="#6F6F77"
-								multiline
-								maxLength={20_000}
-								className="max-h-32 min-h-9 px-2 py-2 text-[16px] leading-5 text-primary"
-							/>
-						</Animated.View>
-						{compact ? sendOrSteer : null}
-						{compact ? stop : null}
-					</Animated.View>
-					{compact ? null : (
-						<Animated.View entering={TOOLBAR_IN} exiting={TOOLBAR_OUT} layout={MORPH} style={styles.toolbar}>
-							{attach}
-							<View style={styles.spacer} />
-							<Animated.View entering={BUTTON_IN} exiting={BUTTON_OUT} layout={MORPH}>
-								<ModelRoleButton
-									role={modelRole}
-									onChange={onModelRoleChange}
-									disabled={modelRoleDisabled}
-									anchor={panel}
-									onOpenChange={setPickerOpen}
+			<View>
+				{matches.length ? <SkillMenu skills={matches} onPick={pickSkill} /> : null}
+				<View ref={panel} collapsable={false}>
+					<Animated.View layout={MORPH} style={[styles.shell, compact ? styles.pill : styles.panel]}>
+						{images.length ? (
+							<Animated.View entering={FadeIn.springify()} exiting={FadeOut.duration(120)} layout={MORPH}>
+								<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pt-1">
+									{images.map((image, index) => (
+										<View key={image.uri}>
+											<Image source={{ uri: image.uri }} className="h-16 w-16 rounded-xl bg-surface-raised" />
+											<Pressable
+												accessibilityLabel="Remove image"
+												onPress={() => onRemoveImage(index)}
+												hitSlop={8}
+												className="absolute right-1 top-1 h-5 w-5 items-center justify-center rounded-full bg-ink/80"
+											>
+												<Icon name="xmark" size={9} />
+											</Pressable>
+										</View>
+									))}
+								</ScrollView>
+							</Animated.View>
+						) : null}
+						<Animated.View layout={MORPH} style={styles.inputRow}>
+							{compact ? attach : null}
+							<Animated.View layout={MORPH} style={styles.inputSlot}>
+								<TextInput
+									ref={input}
+									value={value}
+									onChangeText={onChangeText}
+									onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+									nativeID={`composer-input-${clears}`}
+									placeholder="Message OMP"
+									placeholderTextColor="#6F6F77"
+									multiline
+									maxLength={20_000}
+									className="max-h-32 min-h-9 px-2 py-2 text-[16px] leading-5 text-primary"
 								/>
 							</Animated.View>
-							{sendOrSteer}
-							{stop}
+							{compact ? sendOrSteer : null}
+							{compact ? stop : null}
 						</Animated.View>
-					)}
-				</Animated.View>
+						{compact ? null : (
+							<Animated.View entering={TOOLBAR_IN} exiting={TOOLBAR_OUT} layout={MORPH} style={styles.toolbar}>
+								{attach}
+								<View style={styles.spacer} />
+								<Animated.View entering={BUTTON_IN} exiting={BUTTON_OUT} layout={MORPH}>
+									<ModelRoleButton
+										role={modelRole}
+										onChange={onModelRoleChange}
+										disabled={modelRoleDisabled}
+										anchor={panel}
+										onOpenChange={setPickerOpen}
+									/>
+								</Animated.View>
+								{sendOrSteer}
+								{stop}
+							</Animated.View>
+						)}
+					</Animated.View>
+				</View>
 			</View>
 		</LayoutAnimationConfig>
 	);

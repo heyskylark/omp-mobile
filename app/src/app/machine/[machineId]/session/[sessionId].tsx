@@ -14,6 +14,7 @@ import { OmpApi, operationId } from "../../../../data/api";
 import { acquireMachineSocket } from "../../../../data/live";
 import { useMachine } from "../../../../data/machines";
 import { sessionViewReducer, type SessionViewState } from "../../../../data/session-reducer";
+import { useSkills } from "../../../../data/skills";
 
 export default function SessionScreen() {
 	const { machineId, sessionId } = useLocalSearchParams<{ machineId: string; sessionId: string }>();
@@ -29,6 +30,7 @@ export default function SessionScreen() {
 	const [changingRole, setChangingRole] = useState(false);
 	const attachments = useImageAttachments();
 	const list = useRef<FlatList<TimelineItem>>(null);
+	const skills = useSkills(api, machineId, view.kind === "ready" ? view.session.project.path : undefined);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
 		try {
@@ -219,6 +221,7 @@ export default function SessionScreen() {
 					modelRole={view.modelRole}
 					onModelRoleChange={(role) => void changeModelRole(role)}
 					modelRoleDisabled={changingRole || roleLocked}
+					skills={skills}
 				/>
 			</View>
 		</KeyboardAvoidingView>

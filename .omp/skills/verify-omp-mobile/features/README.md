@@ -32,4 +32,5 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 - [New session from the phone](./new-session.md) — folder browser or recent project, first prompt, roots confinement.
 - [Live session, questions, and approvals](./live-session-interactions.md) — approve/deny, questions, follow-up, stop, hand off, terminal (Collab) sessions, notification actions.
 - [Model roles and the composer](./model-role.md) — compact pill and expanded toolbar, role slider, new-session role, switching an open session.
+- [Skill completion](./skills.md) — `/skill:` menu with user, project, and plugin skills, fuzzy filter, tap to complete, typed command in the transcript.
 - [Menu bar app](./menubar.md) — pairing window and consumed-code confirmation, status panel and status item, remove device, offline.

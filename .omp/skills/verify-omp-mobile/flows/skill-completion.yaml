@@ -1,0 +1,70 @@
+# Types `/skill:` in New session and in the created session's composer, proving the skill menu lists project-level
+# (PROJECT_SKILL in <PROJECT>/.omp/skills) and user-level (USER_SKILL) skills, fuzzy-filters by name (PROJECT_QUERY)
+# and by description (USER_QUERY), and completes the command on tap. Sends one `/skill:` prompt (one small model turn).
+# env: MACHINE_NAME, PROJECT_SKILL, PROJECT_QUERY, USER_SKILL, USER_QUERY
+appId: com.heyskylark.ompmobile
+name: skill-completion
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Message OMP"
+# A lone `/` lists every skill, alphabetically.
+- inputText: "/"
+- extendedWaitUntil:
+    visible: "Skill suggestions"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: skill-01-slash-lists-all
+- inputText: "skill:${PROJECT_QUERY}"
+- extendedWaitUntil:
+    visible: "Skill ${PROJECT_SKILL}"
+    timeout: 10000
+- assertNotVisible: "Skill ${USER_SKILL}"
+- waitForAnimationToEnd
+- takeScreenshot: skill-02-fuzzy-filtered
+- tapOn: "Skill ${PROJECT_SKILL}"
+- extendedWaitUntil:
+    notVisible: "Skill suggestions"
+    timeout: 10000
+- assertVisible: "/skill:${PROJECT_SKILL} "
+- takeScreenshot: skill-03-completed
+- inputText: "now"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Session menu"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
+- waitForAnimationToEnd
+- takeScreenshot: skill-04-session-transcript
+# Mid-prompt command in an open session, matched through the skill's description.
+- tapOn: "Message OMP"
+- inputText: "again /skill:${USER_QUERY}"
+- extendedWaitUntil:
+    visible: "Skill ${USER_SKILL}"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: skill-05-description-match
+- tapOn: "Skill ${USER_SKILL}"
+- extendedWaitUntil:
+    notVisible: "Skill suggestions"
+    timeout: 10000
+- assertVisible: "again /skill:${USER_SKILL} "
+- takeScreenshot: skill-06-mid-prompt-completed

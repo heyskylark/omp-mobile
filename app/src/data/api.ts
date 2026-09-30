@@ -14,6 +14,8 @@ import type {
 	ServerInfo,
 	SessionListPage,
 	SessionSnapshot,
+	SkillCommand,
+	SkillListResponse,
 	TimelinePage,
 } from "@omp-mobile/protocol";
 import type { PairedMachine } from "../native/types";
@@ -184,6 +186,14 @@ export class OmpApi {
 			`/v1/fs/dirs${query}`,
 			{ method: "GET" },
 			typed<DirectoryListing>("directory listing", ["path", "roots", "entries"]),
+		);
+	}
+
+	skills(cwd: string): Promise<SkillCommand[]> {
+		return this.request(
+			`/v1/skills?cwd=${encodeURIComponent(cwd)}`,
+			{ method: "GET" },
+			(value) => typed<SkillListResponse>("skills", ["skills"])(value).skills,
 		);
 	}
 
