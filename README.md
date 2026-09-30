@@ -109,7 +109,7 @@ To uninstall, run `scripts/uninstall.sh`. It removes the LaunchAgent, the extens
 |---|---|---|
 | `port` | `8787` | Port for the app API. The server listens on the Tailscale IPv4 address and on `127.0.0.1`. |
 | `relayPort` | `8788` | Loopback port for the Collab relay. |
-| `machineName` | Computer name | Name shown in the app. |
+| `machineName` | Computer name | Name shown in the app and the menu bar. Renaming the computer in the app writes this key. |
 | `roots` | `["~"]` | Folders the app may browse and start sessions in. |
 | `ompPath` | `omp` on `PATH` | Path to the OMP executable. |
 | `rpcArgs` | none | Extra arguments for server-started sessions, for example `["--model", "openai-codex/gpt-5.6-terra:medium"]`. |
@@ -123,6 +123,8 @@ Restart the server after you change the file: choose **Restart server** in the m
 2. In the app, tap **Add computer** and scan the QR code.
 
 A pairing code works once and expires after 10 minutes. After a phone uses it, the Mac confirms which device connected; choose **New code** to connect another device. You can also copy the pairing link on the Mac and paste it into the app. Pairing the same app install again replaces its previous registration on that computer. Remove a phone from the menu bar under **Paired devices**.
+
+To rename a computer, open it in the app, tap the **…** button, edit **Name**, and tap **Save**. The server saves the name to `machineName` in `~/.omp-mobile/config.json` and uses it right away. Other paired phones pick it up the next time they load the Computers list.
 
 ## Get the app on your iPhone with TestFlight
 

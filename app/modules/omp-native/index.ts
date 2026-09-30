@@ -18,6 +18,7 @@ type OmpNativeEvents = {
 declare class NativeOmpModule extends NativeModule<OmpNativeEvents> {
 	listMachines(): Promise<PairedMachine[]>;
 	saveMachine(machine: MachineSecretInput): Promise<void>;
+	renameMachine(machineId: string, name: string): Promise<void>;
 	removeMachine(machineId: string): Promise<void>;
 	registerForPush(): Promise<{ token: string; environment: PushEnvironment } | null>;
 	consumeLaunchNotification(): Promise<NotificationOpen | null>;
@@ -28,6 +29,7 @@ const nativeModule = requireNativeModule<NativeOmpModule>("OmpNative");
 export const OmpNative: OmpNativeContract = {
 	listMachines: () => nativeModule.listMachines(),
 	saveMachine: (machine) => nativeModule.saveMachine(machine),
+	renameMachine: (machineId, name) => nativeModule.renameMachine(machineId, name),
 	removeMachine: (machineId) => nativeModule.removeMachine(machineId),
 	registerForPush: () => nativeModule.registerForPush(),
 	consumeLaunchNotification: () => nativeModule.consumeLaunchNotification(),

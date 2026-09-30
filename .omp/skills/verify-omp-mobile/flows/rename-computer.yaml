@@ -1,0 +1,39 @@
+# Renames a paired computer from its settings screen: computer row -> header ellipsis ("More") -> Name field ->
+# Save. The server writes machineName to its config.json, and the Computers row shows the new name.
+# env: MACHINE_NAME (current name), NEW_NAME
+appId: com.heyskylark.ompmobile
+name: rename-computer
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "More"
+- extendedWaitUntil:
+    visible: "Computer name"
+    timeout: 10000
+- tapOn: "Computer name"
+- eraseText: 80
+- inputText: "${NEW_NAME}"
+- extendedWaitUntil:
+    visible: "Save"
+    timeout: 5000
+- takeScreenshot: rename-01-editing
+- tapOn: "Save"
+- extendedWaitUntil:
+    notVisible: "Save"
+    timeout: 15000
+- takeScreenshot: rename-02-saved
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible: "${NEW_NAME}"
+    timeout: 10000
+- takeScreenshot: rename-03-session-list
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible: "Computer, ${NEW_NAME}, Online.*"
+    timeout: 15000
+- takeScreenshot: rename-04-computers

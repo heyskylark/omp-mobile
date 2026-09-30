@@ -1,0 +1,11 @@
+# After the computer is renamed elsewhere (another phone, or config.json plus a server restart), relaunching the
+# app shows the new name on the Computers row without pairing again.
+# env: NEW_NAME
+appId: com.heyskylark.ompmobile
+name: computer-name-refresh
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${NEW_NAME}, Online.*"
+    timeout: 30000
+- takeScreenshot: refresh-01-computers

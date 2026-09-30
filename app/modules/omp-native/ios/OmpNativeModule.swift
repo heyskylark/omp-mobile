@@ -50,6 +50,16 @@ public final class OmpNativeModule: Module {
       try MachineVault.shared.save(record)
     }
 
+    AsyncFunction("renameMachine") { (machineId: String, name: String) in
+      let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !name.isEmpty else { throw OmpNativeError.invalidField("name") }
+      guard var record = try MachineVault.shared.get(machineId: machineId) else {
+        throw OmpNativeError.invalidField("machineId")
+      }
+      record.name = name
+      try MachineVault.shared.save(record)
+    }
+
     AsyncFunction("removeMachine") { (machineId: String) in
       guard !machineId.isEmpty else { throw OmpNativeError.invalidField("machineId") }
       try MachineVault.shared.remove(machineId: machineId)

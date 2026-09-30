@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
+	MAX_MACHINE_NAME_LENGTH,
 	MAX_PROMPT_IMAGES,
 	MODEL_ROLES,
 	PROTOCOL_VERSION,
@@ -15,7 +16,7 @@ import {
 	type SessionSummary,
 	type SkillListResponse,
 } from "@omp-mobile/protocol";
-import type { ServerConfig } from "../config.ts";
+import { saveMachineName, type ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { ProjectPathError } from "../history/directories.ts";
 import { filterSessions, sessionFilter } from "../history/filter.ts";
@@ -50,6 +51,7 @@ const CreateSessionSchema = z.object({
 });
 const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
 const ModelRoleSchema = z.object({ role: z.enum(MODEL_ROLES) });
+const MachineNameSchema = z.object({ machineName: z.string().trim().min(1).max(MAX_MACHINE_NAME_LENGTH) });
 const ResponseSchema = z.object({
 	operationId: z.string().min(1),
 	response: z.discriminatedUnion("kind", [
@@ -290,6 +292,10 @@ export function createHttpHandler(
 			}
 			const device = await requireDevice(req, options.devices);
 			if (path === "/v1/info" && req.method === "GET") return json(serverInfo(options));
+			if (path === "/v1/machine/name" && req.method === "PUT") {
+				await saveMachineName(options.config, MachineNameSchema.parse(await body(req)).machineName);
+				return json(serverInfo(options));
+			}
 			if (path === "/v1/devices/me/push" && req.method === "PUT") {
 				await options.devices.setPush(device.id, PushSchema.parse(await body(req)));
 				return new Response(null, { status: 204 });

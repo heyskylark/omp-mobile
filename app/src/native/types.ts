@@ -40,6 +40,8 @@ export interface PastedImage {
 export interface OmpNativeModule {
 	listMachines(): Promise<PairedMachine[]>;
 	saveMachine(machine: MachineSecretInput): Promise<void>;
+	/** Changes the stored display name only; the token, push key, and socket are untouched. */
+	renameMachine(machineId: string, name: string): Promise<void>;
 	removeMachine(machineId: string): Promise<void>;
 	/** Requests notification permission, installs categories, registers with APNs. Resolves null when denied or unavailable (simulator without push). */
 	registerForPush(): Promise<{ token: string; environment: PushEnvironment } | null>;
