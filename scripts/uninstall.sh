@@ -46,6 +46,7 @@ restore_setting collab.autoStart "$STATE_DIR/collab-autoStart.json"
 restore_setting collab.relayUrl "$STATE_DIR/collab-relayUrl.json"
 
 if [ -e "$STATE_DIR/menubar-installed" ]; then
+  run pkill -x "OMP Mobile" || true
   run osascript -e 'tell application "System Events" to delete every login item whose path is "'"$APP"'"'
   run rm -rf "$APP"
 fi

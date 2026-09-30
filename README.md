@@ -94,7 +94,7 @@ The installer does the following:
 - Links `extension/omp-mobile.ts` into `~/.omp/agent/extensions/` so every OMP session reports its lifecycle to the server.
 - Sets `collab.autoStart` to `control` and `collab.relayUrl` to the local relay, and records your previous values.
 - Installs the LaunchAgent `com.heyskylark.omp-mobile.server`, which runs `bun server/src/main.ts` at login and restarts it if it stops. Logs go to `~/.omp-mobile/logs/`.
-- With `--with-menubar`, builds the menu bar app into `~/Applications/OMP Mobile.app` and adds it as a login item.
+- With `--with-menubar`, builds the menu bar app into `~/Applications/OMP Mobile.app`, adds it as a login item, and opens it. Running the installer again replaces the running app and keeps a single login item.
 
 To uninstall, run `scripts/uninstall.sh`. It removes the LaunchAgent, the extension link, the menu bar app, and the config file the installer created, and restores the OMP settings the installer changed. It keeps paired devices and logs in `~/.omp-mobile/`. Delete that folder to remove them.
 

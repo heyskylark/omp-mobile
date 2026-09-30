@@ -110,9 +110,12 @@ if [ "$WITH_MENUBAR" -eq 1 ]; then
   fi
   run "$ROOT/macos/build.sh"
   run mkdir -p "$HOME/Applications"
+  run pkill -x "OMP Mobile" || true
   run rm -rf "$HOME/Applications/OMP Mobile.app"
   run cp -R "$ROOT/macos/build/OMP Mobile.app" "$HOME/Applications/OMP Mobile.app"
+  run osascript -e 'tell application "System Events" to delete every login item whose path is "'"$HOME"'/Applications/OMP Mobile.app"'
   run osascript -e 'tell application "System Events" to make login item at end with properties {path:"'"$HOME"'/Applications/OMP Mobile.app", hidden:false}'
+  run open "$HOME/Applications/OMP Mobile.app"
   [ "$DRY_RUN" -eq 1 ] || : > "$STATE_DIR/menubar-installed"
 fi
 
