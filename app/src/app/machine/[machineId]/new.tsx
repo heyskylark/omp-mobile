@@ -3,7 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } fro
 import { router, useLocalSearchParams } from "expo-router";
 import type { RecentProject } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
-import { Composer } from "../../../components/composer";
+import { Composer, useImageAttachments } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
 import { OmpApi, operationId } from "../../../data/api";
 import { useMachine } from "../../../data/machines";
@@ -16,6 +16,7 @@ export default function NewSessionScreen() {
 	const [prompt, setPrompt] = useState("");
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
+	const attachments = useImageAttachments();
 	useEffect(() => {
 		if (cwd) setSelected(cwd);
 	}, [cwd]);
@@ -36,13 +37,15 @@ export default function NewSessionScreen() {
 	if (!machine) return <ErrorState message="This computer is no longer paired." />;
 	if (state === "loading") return <Loading label="Loading projects…" />;
 	const create = async () => {
-		if (!selected || !prompt.trim() || state === "creating") return;
+		const images = attachments.images;
+		if (!selected || (!prompt.trim() && !images.length) || state === "creating") return;
 		setState("creating");
 		try {
 			const created = await new OmpApi(machine).create({
 				operationId: operationId(),
 				cwd: selected,
 				prompt: prompt.trim(),
+				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 			router.replace({
@@ -110,6 +113,9 @@ export default function NewSessionScreen() {
 					onStop={() => {}}
 					working={false}
 					disabled={!selected || state === "creating"}
+					images={attachments.images}
+					onAttach={attachments.attach}
+					onRemoveImage={attachments.remove}
 				/>
 			</View>
 		</KeyboardAvoidingView>

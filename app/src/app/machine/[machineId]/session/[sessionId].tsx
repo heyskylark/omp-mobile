@@ -3,7 +3,7 @@ import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, View 
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import * as Haptics from "expo-haptics";
 import type { InteractionResponse, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
-import { Composer } from "../../../../components/composer";
+import { Composer, useImageAttachments } from "../../../../components/composer";
 import { InteractionPanel } from "../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../components/session-meta";
 import { TimelineRow } from "../../../../components/timeline";
@@ -24,6 +24,7 @@ export default function SessionScreen() {
 	const [prompt, setPrompt] = useState("");
 	const [sending, setSending] = useState(false);
 	const [responding, setResponding] = useState(false);
+	const attachments = useImageAttachments();
 	const list = useRef<FlatList<TimelineItem>>(null);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
@@ -112,14 +113,21 @@ export default function SessionScreen() {
 		["starting", "working", "settling"].includes(view.session.liveness.phase);
 	const send = async () => {
 		const text = prompt.trim();
-		if (!text || sending) return;
+		const images = attachments.images;
+		if ((!text && !images.length) || sending) return;
 		setPrompt("");
+		attachments.setImages([]);
 		setSending(true);
 		await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 		try {
-			await api.prompt(sessionId, { operationId: operationId(), text });
+			await api.prompt(sessionId, {
+				operationId: operationId(),
+				text,
+				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
+			});
 		} catch (error) {
 			setPrompt(text);
+			attachments.setImages(images);
 			show(error instanceof Error ? error.message : "Message not sent", "error");
 		} finally {
 			setSending(false);
@@ -180,6 +188,9 @@ export default function SessionScreen() {
 					working={working}
 					onStop={stop}
 					disabled={sending}
+					images={attachments.images}
+					onAttach={attachments.attach}
+					onRemoveImage={attachments.remove}
 				/>
 			</View>
 		</KeyboardAvoidingView>

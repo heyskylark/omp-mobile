@@ -16,6 +16,8 @@ import type {
 import type { PairedMachine } from "../native/types";
 
 const REQUEST_TIMEOUT_MS = 12_000;
+// Image uploads can be a few MB over a phone connection.
+const UPLOAD_TIMEOUT_MS = 60_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -53,9 +55,14 @@ export class OmpApiError extends Error {
 export class OmpApi {
 	constructor(private readonly machine: Pick<PairedMachine, "url" | "token">) {}
 
-	private async request<T>(path: string, init: RequestInit, parse: (value: unknown) => T): Promise<T> {
+	private async request<T>(
+		path: string,
+		init: RequestInit,
+		parse: (value: unknown) => T,
+		timeoutMs = REQUEST_TIMEOUT_MS,
+	): Promise<T> {
 		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+		const timeout = setTimeout(() => controller.abort(), timeoutMs);
 		try {
 			const response = await fetch(`${this.machine.url.replace(/\/$/, "")}${path}`, {
 				...init,
@@ -120,6 +127,7 @@ export class OmpApi {
 			"/v1/sessions",
 			{ method: "POST", body: JSON.stringify(body) },
 			typed<{ sessionId: string }>("created session", ["sessionId"]),
+			body.images?.length ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
 		);
 	}
 
@@ -128,6 +136,7 @@ export class OmpApi {
 			`/v1/sessions/${encodeURIComponent(sessionId)}/prompt`,
 			{ method: "POST", body: JSON.stringify(body) },
 			typed<{ state: string }>("prompt", ["state"]),
+			body.images?.length ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
 		);
 	}
 

@@ -24,6 +24,7 @@ The menu bar screenshots use sample data.
 
 - **Session history.** Every OMP session on the computer, newest first, with titles and project folders. Transcripts load a page at a time as you scroll up, so a long session opens instantly.
 - **Live sessions.** Watch the agent stream text, thinking, and tool calls. Send follow-up prompts, steer a running turn with a new message, or stop it.
+- **Images.** Attach up to four images to a message from your photo library or the clipboard, such as a screenshot. The app scales them to at most 2048 pixels on the long edge and sends them as JPEG.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.

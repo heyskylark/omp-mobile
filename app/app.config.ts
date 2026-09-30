@@ -51,6 +51,14 @@ const config: ExpoConfig = {
 			},
 		],
 		"@bacons/apple-targets",
+		[
+			"expo-image-picker",
+			{
+				photosPermission: "Attach photos and screenshots to your OMP messages.",
+				cameraPermission: "Scan an OMP computer pairing code.",
+				microphonePermission: false,
+			},
+		],
 		["expo-build-properties", { ios: { deploymentTarget: "16.0" } }],
 		"./plugins/with-pod-deployment-target",
 	],
