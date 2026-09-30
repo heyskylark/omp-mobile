@@ -15,6 +15,8 @@ import {
 import type { ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { ProjectPathError } from "../history/directories.ts";
+import { filterSessions, sessionFilter } from "../history/filter.ts";
+import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub } from "../live/api.ts";
 import type { DeviceStore, StoredDevice } from "../store/devices.ts";
 import { watchTailscale, type TailscaleState } from "../tailscale.ts";
@@ -128,6 +130,8 @@ function errorResponse(error: unknown): Response {
 		);
 	if (error instanceof ProjectPathError)
 		return json({ code: "forbidden", message: error.message } satisfies ApiError, 403);
+	if (error instanceof InvalidHistoryCursorError)
+		return json({ code: "invalid_cursor", message: error.message } satisfies ApiError, 400);
 	console.error(error);
 	return json(
 		{
@@ -289,13 +293,18 @@ export function createHttpHandler(
 			}
 			if (path === "/v1/sessions" && req.method === "GET") {
 				const cursor = url.searchParams.get("cursor") ?? undefined;
-				const page = await options.history.listSessions({ cursor, limit: parseLimit(url, 40, 100) });
+				const project = url.searchParams.get("project") ?? undefined;
+				const query = url.searchParams.get("q") ?? undefined;
+				const page = await options.history.listSessions({ cursor, limit: parseLimit(url, 40, 100), project, query });
 				const historyItems = page.items.map((item) => summary(item, options.hub));
 				const historyIds = new Set(historyItems.map((item) => item.id));
+				// Page 1 also carries live sessions that have no JSONL yet, filtered and ordered like history.
 				const items = cursor
 					? historyItems
-					: [...historyItems, ...options.hub.activeSummaries().filter((item) => !historyIds.has(item.id))].sort(
-							(left, right) => right.updatedAt.localeCompare(left.updatedAt),
+					: filterSessions(
+							[...historyItems, ...options.hub.activeSummaries().filter((item) => !historyIds.has(item.id))],
+							sessionFilter(project, query),
+							(item) => item.project.path,
 						);
 				return json({ items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) });
 			}

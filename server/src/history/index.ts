@@ -3,28 +3,31 @@ import { realpath } from "node:fs/promises";
 import type { History, HistoryOptions, SessionMetaPage } from "./api";
 import { SessionCatalog } from "./catalog";
 import { DirectoryBrowser, ProjectPathError } from "./directories";
+import { filterSessions, sessionFilter, type SessionFilter } from "./filter";
 import { InvalidHistoryCursorError, SessionPager } from "./pager";
 
-function encodeListCursor(offset: number, secret: Uint8Array) {
-	const body = Buffer.from(JSON.stringify({ offset })).toString("base64url");
+function encodeListCursor(offset: number, filter: SessionFilter, secret: Uint8Array) {
+	const body = Buffer.from(JSON.stringify({ offset, ...filter })).toString("base64url");
 	const signature = createHmac("sha256", secret).update(body).digest("base64url");
 	return `${body}.${signature}`;
 }
 
-function decodeListCursor(cursor: string, secret: Uint8Array) {
+/** Offset of a cursor issued for exactly `filter`; any other filter, forgery or garbage is rejected. */
+function decodeListCursor(cursor: string, filter: SessionFilter, secret: Uint8Array) {
 	const [body, signature, extra] = cursor.split(".");
 	if (!body || !signature || extra) throw new InvalidHistoryCursorError();
 	const actual = Buffer.from(signature, "base64url");
 	const expected = createHmac("sha256", secret).update(body).digest();
 	if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new InvalidHistoryCursorError();
+	let value: { offset?: unknown; project?: unknown; query?: unknown };
 	try {
-		const value = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { offset?: unknown };
-		if (!Number.isInteger(value.offset) || (value.offset as number) < 0) throw new InvalidHistoryCursorError();
-		return value.offset as number;
-	} catch (error) {
-		if (error instanceof InvalidHistoryCursorError) throw error;
+		value = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+	} catch {
 		throw new InvalidHistoryCursorError();
 	}
+	if (!Number.isInteger(value.offset) || (value.offset as number) < 0) throw new InvalidHistoryCursorError();
+	if (value.project !== filter.project || value.query !== filter.query) throw new InvalidHistoryCursorError();
+	return value.offset as number;
 }
 
 export { InvalidHistoryCursorError, ProjectPathError };
@@ -47,15 +50,16 @@ export function createHistory(options: HistoryOptions): History {
 	});
 
 	return {
-		async listSessions({ cursor, limit }): Promise<SessionMetaPage> {
-			const all = await catalog.all();
-			const offset = cursor ? decodeListCursor(cursor, options.cursorSecret) : 0;
+		async listSessions({ cursor, limit, project, query }): Promise<SessionMetaPage> {
+			const filter = sessionFilter(project, query);
+			const offset = cursor ? decodeListCursor(cursor, filter, options.cursorSecret) : 0;
+			const all = filterSessions(await catalog.all(), filter, (meta) => meta.cwd);
 			if (offset > all.length) throw new InvalidHistoryCursorError();
 			const items = all.slice(offset, offset + limit);
 			const nextOffset = offset + items.length;
 			return {
 				items,
-				...(nextOffset < all.length ? { nextCursor: encodeListCursor(nextOffset, options.cursorSecret) } : {}),
+				...(nextOffset < all.length ? { nextCursor: encodeListCursor(nextOffset, filter, options.cursorSecret) } : {}),
 			};
 		},
 		getSession(id) {
