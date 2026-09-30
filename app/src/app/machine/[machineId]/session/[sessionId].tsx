@@ -30,7 +30,7 @@ export default function SessionScreen() {
 	const [changingRole, setChangingRole] = useState(false);
 	const attachments = useImageAttachments();
 	const list = useRef<FlatList<TimelineItem>>(null);
-	const skills = useSkills(api, machineId, view.kind === "ready" ? view.session.project.path : undefined);
+	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
 		try {
