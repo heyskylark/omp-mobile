@@ -19,10 +19,11 @@ import { ModelRoleButton } from "./model-role-picker";
 import { useToast } from "./toast";
 import { Icon } from "./ui";
 
-const MORPH = LinearTransition.springify().damping(17).stiffness(190);
-const BUTTON_IN = ZoomIn.springify().damping(12).stiffness(240);
+// Same feel as the model picker: one visible overshoot near a 0.6 damping ratio, then settled.
+const MORPH = LinearTransition.springify().damping(21).stiffness(300);
+const BUTTON_IN = ZoomIn.springify().damping(23).stiffness(380);
 const BUTTON_OUT = ZoomOut.duration(120);
-const TOOLBAR_IN = FadeInDown.springify().damping(15).stiffness(200);
+const TOOLBAR_IN = FadeInDown.springify().damping(22).stiffness(340);
 const TOOLBAR_OUT = FadeOutDown.duration(120);
 
 const TONES = {
@@ -147,6 +148,14 @@ export function Composer({
 		});
 		return () => subscription.remove();
 	}, []);
+	// Fabric measures a multiline TextInput from the last text the native view reported, so a field emptied from JS
+	// (after sending) keeps its old height until the input re-renders. Re-render it once with a new `nativeID`.
+	const [clears, setClears] = useState(0);
+	const hadText = useRef(Boolean(value));
+	useEffect(() => {
+		if (!value && hadText.current) setClears((count) => count + 1);
+		hadText.current = Boolean(value);
+	}, [value]);
 	const keyboardVisible = useKeyboardVisible();
 	// The open slider anchors to the panel, so the panel holds its shape until it closes.
 	const [pickerOpen, setPickerOpen] = useState(false);
@@ -210,6 +219,7 @@ export function Composer({
 								ref={input}
 								value={value}
 								onChangeText={onChangeText}
+								nativeID={`composer-input-${clears}`}
 								placeholder="Message OMP"
 								placeholderTextColor="#6F6F77"
 								multiline

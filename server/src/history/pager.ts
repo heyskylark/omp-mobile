@@ -194,6 +194,16 @@ export class SessionPager {
 		return results;
 	}
 
+	/** OMP records a model switch's reasoning level as the very next entry on the chain, a child of the `model_change`. */
+	async #thinkingAfter(file: string, index: FileIndex, active: number[], activeOrdinal: number) {
+		const model = index.entries[active[activeOrdinal]!];
+		const next = index.entries[active[activeOrdinal + 1]!];
+		if (model?.type !== "model_change" || next?.type !== "thinking_level_change" || next.parentId !== model.id)
+			return undefined;
+		const level = (await this.#readEntry(file, next))?.thinkingLevel;
+		return typeof level === "string" ? level : undefined;
+	}
+
 	async page(file: string, sessionId: string, before: string | undefined, limit: number) {
 		const index = await this.#index(file);
 		const active = this.#active(index);
@@ -212,7 +222,9 @@ export class SessionPager {
 				if (message.role === "toolResult" && typeof message.toolCallId === "string")
 					results.set(message.toolCallId, message);
 			}
-			const mapped = entry ? mapEntry(entry, results) : [];
+			const mapped = entry
+				? mapEntry(entry, results, await this.#thinkingAfter(file, index, active, activeOrdinal))
+				: [];
 			const end = position.itemEnd === undefined ? mapped.length : Math.min(position.itemEnd, mapped.length);
 			const take = Math.min(limit - selected.length, end);
 			const begin = end - take;
@@ -245,7 +257,7 @@ export class SessionPager {
 			if (!descriptor) continue;
 			const entry = await this.#readEntry(file, descriptor);
 			if (!entry) continue;
-			const mapped = mapEntry(entry, results);
+			const mapped = mapEntry(entry, results, await this.#thinkingAfter(file, index, active, i));
 			items.push(...mapped);
 			const key = messageKey(entry);
 			if (key) messageKeys.push(key);

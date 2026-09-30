@@ -201,6 +201,34 @@ describe("OMP JSONL history", () => {
 		expect(await history.readModelRole("session-1")).toBe("smol");
 	});
 
+	test("model change events carry the reasoning level OMP recorded with the switch", async () => {
+		const { history, file } = await fixture();
+		let parentId = "c1";
+		const append = async (id: string, entry: Record<string, unknown>) => {
+			await appendFile(file, `${JSON.stringify({ id, parentId, timestamp: "2026-01-01T00:00:07.000Z", ...entry })}\n`);
+			parentId = id;
+		};
+		await appendFile(file, "}\n");
+		await append("m1", { type: "model_change", model: "anthropic/opus", role: "default" });
+		await append("t1", { type: "thinking_level_change", thinkingLevel: "high", configured: "high" });
+		await append("m2", { type: "model_change", model: "openai/gpt" });
+		await append("u3", { type: "message", message: { role: "user", timestamp: 1767225608000, content: "Hi" } });
+		// A later standalone level change does not belong to m2.
+		await append("t2", { type: "thinking_level_change", thinkingLevel: "low" });
+		await append("m3", { type: "model_change", model: "anthropic/haiku" });
+		await append("t3", { type: "thinking_level_change", thinkingLevel: "off" });
+		const page = await history.readTimeline("session-1", { limit: 50 });
+		const tail = await history.readTail("session-1", { afterEntryId: "c1", limit: 50 });
+		for (const items of [page.items, tail.items])
+			expect(
+				items.flatMap((item) => (item.kind === "event" && item.text.startsWith("Model") ? [item.text] : [])),
+			).toEqual([
+				"Model changed to anthropic/opus · high reasoning",
+				"Model changed to openai/gpt",
+				"Model changed to anthropic/haiku · reasoning off",
+			]);
+	});
+
 	test("lists metadata and confines directory browsing across symlinks", async () => {
 		const { root, project, history } = await fixture();
 		const list = await history.listSessions({ limit: 30 });
