@@ -64,7 +64,7 @@ When you close a terminal session, its Collab room closes. After the server sees
 
 - macOS with [Bun](https://bun.sh) 1.3.14 or later and OMP on your `PATH`. OMP 18.4.3 and 18.4.4 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
 - Tailscale running on the computer and on the iPhone, signed in to the same tailnet with MagicDNS on.
-- For the iPhone app: an Apple Developer account, an [Expo](https://expo.dev) account for EAS builds, and Xcode 26.2 or later for local builds.
+- For the iPhone app: Xcode 26.2 or later, which needs macOS Sequoia 15.6 or later. TestFlight also needs an Apple Developer Program membership and an [Expo](https://expo.dev) account for EAS builds. A free Apple Account can [install the app directly](#install-with-a-free-apple-account) for 7 days at a time.
 
 ## Install the server on a computer
 
@@ -181,6 +181,40 @@ Push notifications go from each computer straight to Apple. Each computer needs 
 4. Restart the server. The menu bar stops showing **Push notifications are not configured**. This state is reported by `apnsConfigured` in the admin status response rather than duplicated in its general `problems` list.
 
 The phone registers for notifications when you pair it. Release builds, including TestFlight, register for the production APNs environment and Debug builds for the sandbox. The server sends each phone's notifications to the environment it registered. Each notification's text is encrypted with a key shared only by that phone and the computer, so Apple sees a generic "New activity" placeholder, and the app's notification service extension decrypts the real text on the phone.
+
+## Install with a free Apple account
+
+Without an Apple Developer Program membership, Xcode can sign the app with your free Personal Team and install it on a connected iPhone. The install stops launching after 7 days; build and install again to renew it. Personal Teams cannot use the Push Notifications capability, so this build has no push notifications. Everything else works, and pairing skips push registration.
+
+1. In Xcode, open **Settings** > **Accounts**, add your Apple Account, select its Personal Team, choose **Manage Certificates**, and add an **Apple Development** certificate.
+2. Read your Personal Team ID from that certificate. It is the `OU` value.
+
+   ```sh
+   security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+   ```
+
+3. Choose a bundle identifier that is not already registered by someone else, and export the settings in the shell you build from.
+
+   ```sh
+   export OMP_BUNDLE_ID=com.<your-name>.ompmobile
+   export APPLE_TEAM_ID=<team id>
+   export OMP_PERSONAL_TEAM=1
+   ```
+
+   `OMP_PERSONAL_TEAM=1` leaves out the push entitlement that a Personal Team cannot sign.
+
+4. Connect the iPhone with a cable and trust the computer. On iOS 16 or later, turn on **Settings** > **Privacy & Security** > **Developer Mode** and restart the phone. The setting appears after the phone has been connected to Xcode once.
+5. Generate the native project and install a Release build, which embeds the JavaScript bundle so you do not need Metro.
+
+   ```sh
+   cd app
+   bunx expo prebuild -p ios --clean
+   bunx expo run:ios --device --configuration Release
+   ```
+
+6. Before the first launch, open **Settings** > **General** > **VPN & Device Management** on the iPhone and trust your developer app.
+
+Run `bunx expo prebuild -p ios --clean` whenever you change these variables, because the generated `ios/` folder keeps the previous signing settings.
 
 ## Develop
 
