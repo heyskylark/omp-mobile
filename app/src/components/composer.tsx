@@ -1,7 +1,7 @@
 import { MAX_PROMPT_IMAGES, type ModelRole, type SkillCommand } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import Animated, {
 	FadeIn,
@@ -15,10 +15,12 @@ import Animated, {
 } from "react-native-reanimated";
 import { OmpNative } from "../../modules/omp-native";
 import { pickFromLibrary, prepareImage, type PickedImage } from "../data/attachments";
+import { displayOffset, displayText, editDraft, skillSegments } from "../data/skill-draft";
 import { completeSkill, rankSkills, skillToken } from "../data/skills";
 import type { PastedImage } from "../native/types";
 import { ModelRoleButton } from "./model-role-picker";
 import { SkillMenu } from "./skill-menu";
+import { SkillSegmentsText } from "./skill-text";
 import { useToast } from "./toast";
 import { Icon } from "./ui";
 
@@ -167,9 +169,11 @@ export function Composer({
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const hasContent = Boolean(value.trim()) || images.length > 0;
 	const compact = !keyboardVisible && !value && !images.length && !pickerOpen;
-	// The caret decides which `/skill:` token the menu completes. Selection events can trail `onChangeText` by a
-	// render, so the caret is clamped to the text.
-	const [selection, setSelection] = useState({ start: value.length, end: value.length });
+	const known = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
+	const segments = useMemo(() => skillSegments(value, known, false), [value, known]);
+	// The field shows chips while `value` keeps `/skill:<name>`, so caret and edits are in shown-text positions.
+	const shownText = displayText(segments);
+	const [selection, setSelection] = useState({ start: shownText.length, end: shownText.length });
 	const pendingCaret = useRef<number | null>(null);
 	useEffect(() => {
 		const caret = pendingCaret.current;
@@ -178,22 +182,23 @@ export function Composer({
 		input.current?.setSelection(caret, caret);
 		setSelection({ start: caret, end: caret });
 	}, [value]);
+	const changeShownText = (next: string) => {
+		const edit = editDraft(segments, next);
+		const nextSegments = skillSegments(edit.text, known, false);
+		// Only move the caret when a chip appeared or vanished; otherwise the native caret is already right.
+		if (displayText(nextSegments) !== next) pendingCaret.current = displayOffset(nextSegments, edit.caret);
+		onChangeText(edit.text);
+	};
+	// Selection events can trail `onChangeText` by a render, so the caret is clamped to the text.
 	const token =
 		skills.length && keyboardVisible && selection.start === selection.end
-			? skillToken(value, Math.min(selection.end, value.length))
+			? skillToken(shownText, Math.min(selection.end, shownText.length))
 			: null;
 	const matches = token ? rankSkills(skills, token.query) : [];
 	const pickSkill = (name: string) => {
 		if (!token) return;
-		const next = completeSkill(value, token, name);
 		void Haptics.selectionAsync();
-		if (next.text === value) {
-			input.current?.setSelection(next.caret, next.caret);
-			setSelection({ start: next.caret, end: next.caret });
-			return;
-		}
-		pendingCaret.current = next.caret;
-		onChangeText(next.text);
+		changeShownText(completeSkill(shownText, token, name));
 	};
 
 	const attach =
@@ -253,8 +258,7 @@ export function Composer({
 							<Animated.View layout={MORPH} style={styles.inputSlot}>
 								<TextInput
 									ref={input}
-									value={value}
-									onChangeText={onChangeText}
+									onChangeText={changeShownText}
 									onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
 									nativeID={`composer-input-${clears}`}
 									placeholder="Message OMP"
@@ -262,7 +266,9 @@ export function Composer({
 									multiline
 									maxLength={20_000}
 									className="max-h-32 min-h-9 px-2 py-2 text-[16px] leading-5 text-primary"
-								/>
+								>
+									<SkillSegmentsText segments={segments} />
+								</TextInput>
 							</Animated.View>
 							{compact ? sendOrSteer : null}
 							{compact ? stop : null}

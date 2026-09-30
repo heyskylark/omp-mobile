@@ -71,11 +71,10 @@ export function rankSkills(skills: readonly SkillCommand[], query: string): Skil
 		.map((entry) => entry.skill);
 }
 
-/** `text` with `token` replaced by the complete command and a trailing space; `caret` sits after that space. */
-export function completeSkill(text: string, token: SkillToken, name: string): { text: string; caret: number } {
-	const command = `${COMMAND}${name} `;
+/** `text` with `token` replaced by the complete command and a trailing space. */
+export function completeSkill(text: string, token: SkillToken, name: string): string {
 	const rest = text.slice(token.end).replace(/^ /, "");
-	return { text: `${text.slice(0, token.start)}${command}${rest}`, caret: token.start + command.length };
+	return `${text.slice(0, token.start)}${COMMAND}${name} ${rest}`;
 }
 
 const cache = new Map<string, SkillCommand[]>();

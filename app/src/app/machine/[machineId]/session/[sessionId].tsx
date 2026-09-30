@@ -31,6 +31,7 @@ export default function SessionScreen() {
 	const attachments = useImageAttachments();
 	const list = useRef<FlatList<TimelineItem>>(null);
 	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
+	const skillNames = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
 		try {
@@ -186,8 +187,9 @@ export default function SessionScreen() {
 				ref={list}
 				inverted
 				data={newestFirst}
+				extraData={skillNames}
 				keyExtractor={(item) => item.id}
-				renderItem={({ item }) => <TimelineRow item={item} />}
+				renderItem={({ item }) => <TimelineRow item={item} skills={skillNames} />}
 				contentContainerClassName="px-4 pb-3 pt-5"
 				keyboardDismissMode="on-drag"
 				onEndReached={() => void loadOlder()}

@@ -2,6 +2,8 @@ import type { Block, TimelineItem } from "@omp-mobile/protocol";
 import { useState, Fragment } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useMarkdown } from "react-native-marked";
+import { skillSegments } from "../data/skill-draft";
+import { SkillSegmentsText } from "./skill-text";
 import { Icon } from "./ui";
 
 const markdownTheme = {
@@ -50,7 +52,7 @@ function Thinking({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
 	);
 }
 
-function Blocks({ blocks, markdown }: { blocks: Block[]; markdown: boolean }) {
+function Blocks({ blocks, markdown, skills }: { blocks: Block[]; markdown: boolean; skills?: ReadonlySet<string> }) {
 	return (
 		<>
 			{blocks.map((block, index) => {
@@ -65,7 +67,7 @@ function Blocks({ blocks, markdown }: { blocks: Block[]; markdown: boolean }) {
 					<MarkdownText key={index} value={block.text} />
 				) : (
 					<Text key={index} selectable className="text-body text-primary">
-						{block.text}
+						{skills ? <SkillSegmentsText segments={skillSegments(block.text, skills, true)} /> : block.text}
 					</Text>
 				);
 			})}
@@ -123,7 +125,8 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
 	);
 }
 
-export function TimelineRow({ item }: { item: TimelineItem }) {
+/** `skills` are the names shown as chips in the user's messages. */
+export function TimelineRow({ item, skills }: { item: TimelineItem; skills?: ReadonlySet<string> }) {
 	if (item.kind === "tool")
 		return (
 			<View className="mb-3 px-4">
@@ -143,7 +146,7 @@ export function TimelineRow({ item }: { item: TimelineItem }) {
 	if (item.kind === "user")
 		return (
 			<View className="mb-4 max-w-[86%] self-end rounded-[18px] bg-surface-raised px-4 py-3">
-				<Blocks blocks={item.blocks} markdown={false} />
+				<Blocks blocks={item.blocks} markdown={false} skills={skills} />
 			</View>
 		);
 	return (
