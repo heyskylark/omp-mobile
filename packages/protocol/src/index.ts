@@ -112,11 +112,18 @@ export interface ResponseReceipt {
 	message?: string;
 }
 
+/** OMP model roles selectable from the phone, in slider order (lightest first). */
+export const MODEL_ROLES = ["smol", "default", "slow"] as const;
+
+export type ModelRole = (typeof MODEL_ROLES)[number];
+
 export interface SessionSnapshot {
 	session: SessionSummary;
 	items: TimelineItem[];
 	olderCursor?: string;
 	pending: PendingInteraction[];
+	/** Active OMP model role; null when the session runs a model chosen outside these roles. */
+	modelRole: ModelRole | null;
 }
 
 export interface RecentProject extends Project {
@@ -171,12 +178,23 @@ export interface CreateSessionRequest {
 	cwd: string;
 	prompt: string;
 	images?: ImageAttachment[];
+	/** Model role for the first turn. Omitted means OMP's default role. */
+	modelRole?: ModelRole;
 }
 
 export interface PromptRequest {
 	operationId: string;
 	text: string;
 	images?: ImageAttachment[];
+}
+
+/** Body of `POST /v1/sessions/:id/model-role`; the response is `ModelRoleResponse`. */
+export interface ModelRoleRequest {
+	role: ModelRole;
+}
+
+export interface ModelRoleResponse {
+	modelRole: ModelRole;
 }
 
 export interface RespondRequest {
@@ -208,6 +226,7 @@ export type ServerMessage =
 	| { type: "timeline.upsert"; sessionId: string; items: TimelineItem[] }
 	| { type: "timeline.retire"; sessionId: string; ids: string[] }
 	| { type: "session.update"; sessionId: string; session: SessionSummary; pending: PendingInteraction[] }
+	| { type: "session.modelRole"; sessionId: string; modelRole: ModelRole | null }
 	| { type: "sessions.changed" }
 	| { type: "pong" }
 	| { type: "error"; error: ApiError };

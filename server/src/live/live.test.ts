@@ -66,6 +66,9 @@ test("terminal session_start creates ownership before history catalog catches up
 		async readTail() {
 			return { items: [], messageKeys: [] };
 		},
+		async readModelRole() {
+			return "default" as const;
+		},
 		async recentProjects() {
 			return [];
 		},

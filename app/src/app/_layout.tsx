@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { OmpNative } from "../../modules/omp-native";
+import { OverlayProvider } from "../components/overlay";
 import { ToastProvider, useToast } from "../components/toast";
 import { useMachines } from "../data/machines";
 import type { NotificationOpen } from "../native/types";
@@ -40,25 +41,27 @@ export default function RootLayout() {
 	}, [load]);
 	return (
 		<ToastProvider>
-			<StatusBar style="light" />
-			<NotificationBridge />
-			<Stack
-				screenOptions={{
-					headerStyle: { backgroundColor: "#0B0B0C" },
-					headerTintColor: "#ECECEE",
-					headerShadowVisible: false,
-					contentStyle: { backgroundColor: "#0B0B0C" },
-					headerBackButtonDisplayMode: "minimal",
-				}}
-			>
-				<Stack.Screen name="index" options={{ title: "Computers" }} />
-				<Stack.Screen name="pair" options={{ title: "Add computer", presentation: "modal" }} />
-				<Stack.Screen name="machine/[machineId]/index" options={{ title: "Sessions" }} />
-				<Stack.Screen name="machine/[machineId]/new" options={{ title: "New session" }} />
-				<Stack.Screen name="machine/[machineId]/browse" options={{ title: "Choose folder" }} />
-				<Stack.Screen name="machine/[machineId]/session/[sessionId]" options={{ title: "Session" }} />
-				<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
-			</Stack>
+			<OverlayProvider>
+				<StatusBar style="light" />
+				<NotificationBridge />
+				<Stack
+					screenOptions={{
+						headerStyle: { backgroundColor: "#0B0B0C" },
+						headerTintColor: "#ECECEE",
+						headerShadowVisible: false,
+						contentStyle: { backgroundColor: "#0B0B0C" },
+						headerBackButtonDisplayMode: "minimal",
+					}}
+				>
+					<Stack.Screen name="index" options={{ title: "Computers" }} />
+					<Stack.Screen name="pair" options={{ title: "Add computer", presentation: "modal" }} />
+					<Stack.Screen name="machine/[machineId]/index" options={{ title: "Sessions" }} />
+					<Stack.Screen name="machine/[machineId]/new" options={{ title: "New session" }} />
+					<Stack.Screen name="machine/[machineId]/browse" options={{ title: "Choose folder" }} />
+					<Stack.Screen name="machine/[machineId]/session/[sessionId]" options={{ title: "Session" }} />
+					<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
+				</Stack>
+			</OverlayProvider>
 		</ToastProvider>
 	);
 }

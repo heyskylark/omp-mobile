@@ -168,6 +168,39 @@ describe("OMP JSONL history", () => {
 		});
 	});
 
+	test("reads the model role from the newest role entry on the active branch", async () => {
+		const { history, file } = await fixture();
+		expect(await history.readModelRole("session-1")).toBe("default");
+		let parentId = "c1";
+		const append = async (id: string, entry: Record<string, unknown>, parent = parentId) => {
+			await appendFile(
+				file,
+				`${JSON.stringify({ id, parentId: parent, timestamp: "2026-01-01T00:00:07.000Z", ...entry })}\n`,
+			);
+			parentId = id;
+		};
+		await appendFile(file, "}\n");
+		// Phone switch: OMP's default-role model_change, then the extension's role entry.
+		await append("m1", { type: "model_change", model: "anthropic/opus", role: "default" });
+		await append("k1", { type: "custom", customType: "omp-mobile-model-role", data: { role: "smol" } });
+		expect(await history.readModelRole("session-1")).toBe("smol");
+		// Retry fallback and its restore never change the role.
+		await append("f1", { type: "model_change", model: "openai/gpt", role: "fallback" });
+		expect(await history.readModelRole("session-1")).toBe("smol");
+		// A terminal role cycle after the phone switch wins.
+		await append("m2", { type: "model_change", model: "openai/gpt", role: "slow" });
+		expect(await history.readModelRole("session-1")).toBe("slow");
+		await append("m3", { type: "model_change", model: "openai/gpt", role: "temporary" });
+		expect(await history.readModelRole("session-1")).toBeNull();
+		// Branching back above the terminal switches restores the phone's role.
+		await append(
+			"u3",
+			{ type: "message", message: { role: "user", timestamp: 1767225608000, content: "Branch" } },
+			"k1",
+		);
+		expect(await history.readModelRole("session-1")).toBe("smol");
+	});
+
 	test("lists metadata and confines directory browsing across symlinks", async () => {
 		const { root, project, history } = await fixture();
 		const list = await history.listSessions({ limit: 30 });

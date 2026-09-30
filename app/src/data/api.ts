@@ -2,6 +2,9 @@ import type {
 	ApiError,
 	CreateSessionRequest,
 	DirectoryListing,
+	ModelRole,
+	ModelRoleRequest,
+	ModelRoleResponse,
 	PairRequest,
 	PairResponse,
 	PromptRequest,
@@ -144,6 +147,15 @@ export class OmpApi {
 
 	abort(sessionId: string) {
 		return this.request(`/v1/sessions/${encodeURIComponent(sessionId)}/abort`, { method: "POST" }, () => undefined);
+	}
+
+	setModelRole(sessionId: string, role: ModelRole): Promise<ModelRoleResponse> {
+		const body: ModelRoleRequest = { role };
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/model-role`,
+			{ method: "POST", body: JSON.stringify(body) },
+			typed<ModelRoleResponse>("model role", ["modelRole"]),
+		);
 	}
 
 	handoff(sessionId: string) {

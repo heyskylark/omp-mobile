@@ -1,4 +1,5 @@
 import type {
+	ModelRole,
 	PendingInteraction,
 	ServerMessage,
 	SessionSnapshot,
@@ -16,6 +17,7 @@ export type SessionViewState =
 			items: TimelineItem[];
 			olderCursor?: string;
 			pending: PendingInteraction[];
+			modelRole: ModelRole | null;
 			loadingOlder: boolean;
 	  };
 
@@ -25,6 +27,7 @@ export type SessionAction =
 	| { type: "older.success"; page: TimelinePage }
 	| { type: "older.error" }
 	| { type: "server"; message: ServerMessage }
+	| { type: "modelRole"; modelRole: ModelRole | null }
 	| { type: "error"; message: string };
 
 function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineItem[] {
@@ -33,10 +36,13 @@ function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineIte
 	return [...byId.values()].sort((left, right) => left.at.localeCompare(right.at));
 }
 
+function ready(snapshot: SessionSnapshot): SessionViewState {
+	// Servers older than the model-role endpoint omit the field.
+	return { kind: "ready", ...snapshot, modelRole: snapshot.modelRole ?? null, loadingOlder: false };
+}
+
 export function sessionViewReducer(state: SessionViewState, action: SessionAction): SessionViewState {
-	if (action.type === "snapshot") {
-		return { kind: "ready", ...action.snapshot, loadingOlder: false };
-	}
+	if (action.type === "snapshot") return ready(action.snapshot);
 	if (action.type === "error") return { kind: "error", message: action.message };
 	if (state.kind !== "ready") return state;
 
@@ -45,6 +51,8 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 			return { ...state, loadingOlder: true };
 		case "older.error":
 			return { ...state, loadingOlder: false };
+		case "modelRole":
+			return { ...state, modelRole: action.modelRole };
 		case "older.success":
 			return {
 				...state,
@@ -57,7 +65,7 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 			if (!("sessionId" in message) || message.sessionId !== state.session.id) return state;
 			switch (message.type) {
 				case "session.snapshot":
-					return { kind: "ready", ...message.snapshot, loadingOlder: false };
+					return ready(message.snapshot);
 				case "timeline.upsert":
 					return { ...state, items: upsert(state.items, message.items) };
 				case "timeline.retire": {
@@ -66,6 +74,8 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 				}
 				case "session.update":
 					return { ...state, session: message.session, pending: message.pending };
+				case "session.modelRole":
+					return { ...state, modelRole: message.modelRole };
 				default:
 					return state;
 			}

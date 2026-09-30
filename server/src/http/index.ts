@@ -3,7 +3,9 @@ import { basename } from "node:path";
 import { z } from "zod";
 import {
 	MAX_PROMPT_IMAGES,
+	MODEL_ROLES,
 	PROTOCOL_VERSION,
+	type ModelRoleResponse,
 	encodePairingUrl,
 	type ApiError,
 	type AdminStatus,
@@ -43,8 +45,10 @@ const CreateSessionSchema = z.object({
 	cwd: z.string().min(1),
 	prompt: z.string(),
 	images: ImagesSchema,
+	modelRole: z.enum(MODEL_ROLES).optional(),
 });
 const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
+const ModelRoleSchema = z.object({ role: z.enum(MODEL_ROLES) });
 const ResponseSchema = z.object({
 	operationId: z.string().min(1),
 	response: z.discriminatedUnion("kind", [
@@ -334,6 +338,12 @@ export function createHttpHandler(
 				if (actionMatch[2] === "abort") await options.hub.abort(sessionId);
 				else await options.hub.handoff(sessionId);
 				return new Response(null, { status: 204 });
+			}
+			const modelRoleMatch = path.match(/^\/v1\/sessions\/([^/]+)\/model-role$/);
+			if (modelRoleMatch && req.method === "POST") {
+				const { role } = ModelRoleSchema.parse(await body(req));
+				await options.hub.setModelRole(parsePathParam(modelRoleMatch[1]!), role);
+				return json({ modelRole: role } satisfies ModelRoleResponse);
 			}
 			const respondMatch = path.match(/^\/v1\/sessions\/([^/]+)\/interactions\/([^/]+)\/respond$/);
 			if (respondMatch && req.method === "POST")

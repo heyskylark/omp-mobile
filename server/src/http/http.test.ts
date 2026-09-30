@@ -31,6 +31,7 @@ const snapshot: SessionSnapshot = {
 	},
 	items: [],
 	pending: [],
+	modelRole: "default",
 };
 
 class FakeHub implements LiveHub {
@@ -65,6 +66,7 @@ class FakeHub implements LiveHub {
 		return { state: "accepted" as const };
 	}
 	async abort() {}
+	async setModelRole() {}
 	async handoff() {}
 	async respond(_sessionId: string, _interactionId: string, req: { operationId: string }) {
 		return { operationId: req.operationId, state: "applied" as const };
@@ -90,6 +92,9 @@ const history: History = {
 	},
 	async readTail() {
 		return { items: [], messageKeys: [] };
+	},
+	async readModelRole() {
+		return "default" as const;
 	},
 	async recentProjects() {
 		return [{ path: "/tmp/project", name: "project", lastUsedAt: meta.updatedAt, sessionCount: 1 }];
