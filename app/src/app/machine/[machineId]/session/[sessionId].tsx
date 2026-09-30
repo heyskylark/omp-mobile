@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
 import { useLocalSearchParams, useNavigation } from "expo-router";
+import { useHeaderHeight } from "@react-navigation/elements";
 import * as Haptics from "expo-haptics";
 import type { InteractionResponse, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
 import { Composer, useImageAttachments } from "../../../../components/composer";
@@ -18,6 +19,7 @@ export default function SessionScreen() {
 	const { machineId, sessionId } = useLocalSearchParams<{ machineId: string; sessionId: string }>();
 	const machine = useMachine(machineId);
 	const navigation = useNavigation();
+	const headerHeight = useHeaderHeight();
 	const { show } = useToast();
 	const api = useMemo(() => (machine ? new OmpApi(machine) : null), [machine]);
 	const [view, dispatch] = useReducer(sessionViewReducer, { kind: "loading" } satisfies SessionViewState);
@@ -154,7 +156,7 @@ export default function SessionScreen() {
 	return (
 		<KeyboardAvoidingView
 			behavior={Platform.OS === "ios" ? "padding" : undefined}
-			keyboardVerticalOffset={88}
+			keyboardVerticalOffset={headerHeight}
 			className="flex-1 bg-ink"
 		>
 			<FlatList

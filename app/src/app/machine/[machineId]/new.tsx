@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { useHeaderHeight } from "@react-navigation/elements";
 import type { RecentProject } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
 import { Composer, useImageAttachments } from "../../../components/composer";
@@ -11,6 +12,7 @@ import { useMachine } from "../../../data/machines";
 export default function NewSessionScreen() {
 	const { machineId, cwd } = useLocalSearchParams<{ machineId: string; cwd?: string }>();
 	const machine = useMachine(machineId);
+	const headerHeight = useHeaderHeight();
 	const [projects, setProjects] = useState<RecentProject[]>([]);
 	const [selected, setSelected] = useState(cwd ?? "");
 	const [prompt, setPrompt] = useState("");
@@ -60,7 +62,7 @@ export default function NewSessionScreen() {
 	return (
 		<KeyboardAvoidingView
 			behavior={Platform.OS === "ios" ? "padding" : undefined}
-			keyboardVerticalOffset={88}
+			keyboardVerticalOffset={headerHeight}
 			className="flex-1 bg-ink"
 		>
 			<ScrollView className="flex-1" contentContainerClassName="gap-3 px-4 py-5" keyboardShouldPersistTaps="handled">

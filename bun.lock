@@ -13,6 +13,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@bacons/apple-targets": "^5.0.0",
+        "@react-navigation/elements": "^2.9.44",
         "expo": "~55.0.31",
         "expo-blur": "~55.0.18",
         "expo-build-properties": "~55.0.18",
