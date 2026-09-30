@@ -3,7 +3,9 @@ import { basename } from "node:path";
 import { z } from "zod";
 import {
 	MAX_PROMPT_IMAGES,
+	MODEL_ROLES,
 	PROTOCOL_VERSION,
+	type ModelRoleResponse,
 	encodePairingUrl,
 	type ApiError,
 	type AdminStatus,
@@ -15,6 +17,8 @@ import {
 import type { ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { ProjectPathError } from "../history/directories.ts";
+import { filterSessions, sessionFilter } from "../history/filter.ts";
+import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub } from "../live/api.ts";
 import type { DeviceStore, StoredDevice } from "../store/devices.ts";
 import { watchTailscale, type TailscaleState } from "../tailscale.ts";
@@ -41,8 +45,10 @@ const CreateSessionSchema = z.object({
 	cwd: z.string().min(1),
 	prompt: z.string(),
 	images: ImagesSchema,
+	modelRole: z.enum(MODEL_ROLES).optional(),
 });
 const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
+const ModelRoleSchema = z.object({ role: z.enum(MODEL_ROLES) });
 const ResponseSchema = z.object({
 	operationId: z.string().min(1),
 	response: z.discriminatedUnion("kind", [
@@ -130,6 +136,8 @@ function errorResponse(error: unknown): Response {
 		);
 	if (error instanceof ProjectPathError)
 		return json({ code: "forbidden", message: error.message } satisfies ApiError, 403);
+	if (error instanceof InvalidHistoryCursorError)
+		return json({ code: "invalid_cursor", message: error.message } satisfies ApiError, 400);
 	console.error(error);
 	return json(
 		{
@@ -291,13 +299,18 @@ export function createHttpHandler(
 			}
 			if (path === "/v1/sessions" && req.method === "GET") {
 				const cursor = url.searchParams.get("cursor") ?? undefined;
-				const page = await options.history.listSessions({ cursor, limit: parseLimit(url, 40, 100) });
+				const project = url.searchParams.get("project") ?? undefined;
+				const query = url.searchParams.get("q") ?? undefined;
+				const page = await options.history.listSessions({ cursor, limit: parseLimit(url, 40, 100), project, query });
 				const historyItems = page.items.map((item) => summary(item, options.hub));
 				const historyIds = new Set(historyItems.map((item) => item.id));
+				// Page 1 also carries live sessions that have no JSONL yet, filtered and ordered like history.
 				const items = cursor
 					? historyItems
-					: [...historyItems, ...options.hub.activeSummaries().filter((item) => !historyIds.has(item.id))].sort(
-							(left, right) => right.updatedAt.localeCompare(left.updatedAt),
+					: filterSessions(
+							[...historyItems, ...options.hub.activeSummaries().filter((item) => !historyIds.has(item.id))],
+							sessionFilter(project, query),
+							(item) => item.project.path,
 						);
 				return json({ items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) });
 			}
@@ -327,6 +340,12 @@ export function createHttpHandler(
 				if (actionMatch[2] === "abort") await options.hub.abort(sessionId);
 				else await options.hub.handoff(sessionId);
 				return new Response(null, { status: 204 });
+			}
+			const modelRoleMatch = path.match(/^\/v1\/sessions\/([^/]+)\/model-role$/);
+			if (modelRoleMatch && req.method === "POST") {
+				const { role } = ModelRoleSchema.parse(await body(req));
+				await options.hub.setModelRole(parsePathParam(modelRoleMatch[1]!), role);
+				return json({ modelRole: role } satisfies ModelRoleResponse);
 			}
 			const respondMatch = path.match(/^\/v1\/sessions\/([^/]+)\/interactions\/([^/]+)\/respond$/);
 			if (respondMatch && req.method === "POST")

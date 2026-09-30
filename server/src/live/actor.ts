@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
 	ImageAttachment,
+	ModelRole,
 	PendingInteraction,
 	RespondRequest,
 	ResponseReceipt,
@@ -26,6 +27,9 @@ import { RpcSupervisor } from "./rpc.ts";
 import { publicLiveness, reduceOwnership, type OwnershipEvent, type OwnershipState } from "./state.ts";
 
 type Frame = Record<string, unknown>;
+
+/** Command registered by `extension/omp-mobile.ts`; it switches the rpc child to a model role. */
+const MODEL_ROLE_COMMAND = "omp-mobile-model";
 
 /** OMP prompt fields for attached images: `images` carries OMP ImageContent blocks, omitted when there are none. */
 function ompImages(images: ImageAttachment[]): { images?: Array<{ type: "image" } & ImageAttachment> } {
@@ -89,7 +93,12 @@ export class SessionActor {
 	#rpc?: RpcSupervisor;
 	#collab?: CollabGuest;
 
-	async createNew(prompt: string, operationId: string, images: ImageAttachment[]): Promise<void> {
+	async createNew(
+		prompt: string,
+		operationId: string,
+		images: ImageAttachment[],
+		modelRole: ModelRole = "default",
+	): Promise<void> {
 		if (this.sessionId) throw new Error("Actor already owns a session");
 		const args = [
 			this.#opts.ompPath,
@@ -120,6 +129,16 @@ export class SessionActor {
 		}
 		this.sessionId = state.data.sessionId;
 		this.meta = { ...this.meta, id: state.data.sessionId, file: state.data.sessionFile };
+		// A fresh OMP session already runs the default role.
+		if (modelRole !== "default") {
+			try {
+				await this.#applyModelRole(rpc, modelRole);
+			} catch (error) {
+				await rpc.close().catch(() => undefined);
+				throw error;
+			}
+			this.#modelRole = modelRole;
+		}
 		rpc.onFrame((frame) => this.#onFrame(frame, "rpc"));
 		void rpc.exited.then(() => this.#onRpcExit(rpc));
 		this.#transition({ type: "server.ready", pid: rpc.pid });
@@ -141,6 +160,8 @@ export class SessionActor {
 	#handoffWait?: { promise: Promise<void>; resolve: () => void };
 	#responseEvidence = new Map<string, () => void>();
 	#rpcBusy = false;
+	/** Role applied through this actor's rpc child; history is authoritative once the child is gone. */
+	#modelRole?: ModelRole;
 
 	constructor(meta: SessionMeta, opts: LiveOptions, hooks: ActorHooks) {
 		this.sessionId = meta.id;
@@ -159,7 +180,8 @@ export class SessionActor {
 	}
 
 	async snapshot(limit: number): Promise<SessionSnapshot> {
-		if (!this.meta.file) return { session: this.summary(), items: [], pending: this.pending };
+		const modelRole = this.#modelRole ?? (await this.#opts.history.readModelRole(this.sessionId));
+		if (!this.meta.file) return { session: this.summary(), items: [], pending: this.pending, modelRole };
 		const page = await this.#opts.history.readTimeline(this.sessionId, { limit });
 		const durableIds = new Set(page.items.map((item) => item.id));
 		return {
@@ -167,6 +189,7 @@ export class SessionActor {
 			items: [...page.items, ...[...this.#live.values()].filter((item) => !durableIds.has(item.id))],
 			olderCursor: page.olderCursor,
 			pending: this.pending,
+			modelRole,
 		};
 	}
 
@@ -233,6 +256,17 @@ export class SessionActor {
 			await this.#ensureCollab();
 			await this.#collab!.send({ t: "abort" });
 		} else if (this.#rpc) this.#rpc.send({ type: "abort" });
+	}
+
+	async setModelRole(role: ModelRole): Promise<void> {
+		this.#assertWritable();
+		if (this.state.kind === "terminal")
+			throw new Error("This session is open in a terminal. Change its model from the terminal.");
+		await this.#ensureRpc();
+		await this.#applyModelRole(this.#rpc!, role);
+		this.#modelRole = role;
+		this.#emit({ type: "session.modelRole", sessionId: this.sessionId, modelRole: role });
+		this.#scheduleClose();
 	}
 
 	async handoff(): Promise<void> {
@@ -345,6 +379,36 @@ export class SessionActor {
 		await rpc.ready();
 		this.#transition({ type: "server.ready", pid: rpc.pid });
 		this.#startPolling();
+	}
+
+	/** Runs the extension's role command; OMP reports a thrown handler as `extension_error` before `prompt_result`. */
+	async #applyModelRole(rpc: RpcSupervisor, role: ModelRole): Promise<void> {
+		const id = `model-role:${crypto.randomUUID()}`;
+		let failure: string | undefined;
+		const stopWatching = rpc.onFrame((frame) => {
+			if (frame.type === "extension_error" && frame.extensionPath === `command:${MODEL_ROLE_COMMAND}`)
+				failure = String(frame.error ?? "OMP could not change the model");
+		});
+		try {
+			const settled = rpc.waitFor(
+				(frame) =>
+					frame.id === id && (frame.type === "prompt_result" || (frame.type === "response" && frame.success === false)),
+				30_000,
+			);
+			const response = await rpc.command(
+				{ id, type: "prompt", message: `/${MODEL_ROLE_COMMAND} ${role}`, streamingBehavior: "steer" },
+				30_000,
+			);
+			if (response.success !== true) {
+				settled.catch(() => undefined);
+				throw new Error(String(response.error ?? "OMP rejected the model change"));
+			}
+			const result = await settled;
+			if (result.type === "response") throw new Error(String(result.error ?? "OMP could not change the model"));
+			if (failure) throw new Error(failure);
+		} finally {
+			stopWatching();
+		}
 	}
 
 	async #ensureCollab(): Promise<void> {
@@ -618,6 +682,7 @@ export class SessionActor {
 		const rpc = this.#rpc;
 		if (!rpc) return;
 		this.#rpc = undefined;
+		this.#modelRole = undefined;
 		try {
 			await rpc.close();
 		} finally {
@@ -627,6 +692,7 @@ export class SessionActor {
 	#onRpcExit(rpc: RpcSupervisor): void {
 		if (this.#rpc !== rpc) return;
 		this.#rpc = undefined;
+		this.#modelRole = undefined;
 		for (const [id, record] of this.#pending)
 			if (record.source.transport === "rpc") {
 				record.closed = { cancelled: true };

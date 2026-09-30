@@ -1,0 +1,79 @@
+# Starts a session on the slow model role, then switches the open session to smol, proving the composer's compact
+# pill, the expanded toolbar, and the role slider (drag and tap). Costs one small model turn on the slow role.
+# env: MACHINE_NAME, PROMPT
+appId: com.heyskylark.ompmobile
+name: model-role
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+# Keyboard closed and nothing typed: one-line pill without the model button.
+- assertNotVisible: "Model: .*"
+- takeScreenshot: role-01-compact
+- tapOn: "Message OMP"
+- extendedWaitUntil:
+    visible: "Model: Default"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: role-02-expanded
+- tapOn: "Model: Default"
+- extendedWaitUntil:
+    visible: "Model role Slow"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: role-03-picker-open
+# Drag the knob from the center stop to the right end of the track.
+- swipe:
+    from: "Model role Default"
+    direction: RIGHT
+    duration: 900
+- takeScreenshot: role-04-dragged-to-slow
+- extendedWaitUntil:
+    visible: "Model: Slow"
+    timeout: 10000
+- inputText: ${PROMPT}
+- takeScreenshot: role-05-ready-to-send
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Session menu"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
+# The session screen's composer collapses once the keyboard closes on an empty field.
+- hideKeyboard
+- extendedWaitUntil:
+    notVisible: "Model: .*"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: role-06-session-compact
+- tapOn: "Message OMP"
+- extendedWaitUntil:
+    visible: "Model: Slow"
+    timeout: 10000
+- tapOn: "Model: Slow"
+- extendedWaitUntil:
+    visible: "Model role Smol"
+    timeout: 10000
+- tapOn: "Model role Smol"
+- takeScreenshot: role-07-tapped-smol
+- extendedWaitUntil:
+    visible: "Model: Smol"
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: role-08-session-smol

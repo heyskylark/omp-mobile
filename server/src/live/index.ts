@@ -1,4 +1,11 @@
-import type { CreateSessionRequest, PromptRequest, RespondRequest, ServerMessage } from "@omp-mobile/protocol";
+import type {
+	CreateSessionRequest,
+	ModelRole,
+	PromptRequest,
+	RespondRequest,
+	ServerMessage,
+	SessionSnapshot,
+} from "@omp-mobile/protocol";
 import type { SessionMeta } from "../history/api.ts";
 import { SessionActor } from "./actor.ts";
 import type { CreateLiveHub, ExtensionEvent, LiveHub, LiveNotification, LiveOptions } from "./api.ts";
@@ -38,16 +45,23 @@ class Hub implements LiveHub {
 			return actor ? [actor.summary()] : [];
 		});
 	}
-	async snapshot(sessionId: string, limit: number) {
+	async snapshot(sessionId: string, limit: number): Promise<SessionSnapshot | null> {
 		const actor = await this.#actor(sessionId);
 		if (actor) {
-			if (this.#provisional.has(sessionId)) return { session: actor.summary(), items: [], pending: actor.pending };
+			if (this.#provisional.has(sessionId))
+				return { session: actor.summary(), items: [], pending: actor.pending, modelRole: "default" };
 			return actor.snapshot(limit);
 		}
 		const meta = await this.#opts.history.getSession(sessionId);
 		if (!meta) return null;
 		const page = await this.#opts.history.readTimeline(sessionId, { limit });
-		return { session: this.#summary(meta), items: page.items, olderCursor: page.olderCursor, pending: [] };
+		return {
+			session: this.#summary(meta),
+			items: page.items,
+			olderCursor: page.olderCursor,
+			pending: [],
+			modelRole: await this.#opts.history.readModelRole(sessionId),
+		};
 	}
 
 	subscribe(sessionId: string, send: (message: ServerMessage) => void): () => void {
@@ -87,7 +101,7 @@ class Hub implements LiveHub {
 			this.#opts,
 			this.#hooks(),
 		);
-		await actor.createNew(req.prompt, req.operationId, req.images ?? []);
+		await actor.createNew(req.prompt, req.operationId, req.images ?? [], req.modelRole);
 		this.#actors.set(actor.sessionId, actor);
 		this.#broadcast();
 		return { sessionId: actor.sessionId };
@@ -98,6 +112,9 @@ class Hub implements LiveHub {
 	}
 	async abort(sessionId: string): Promise<void> {
 		await (await this.#required(sessionId)).abort();
+	}
+	async setModelRole(sessionId: string, role: ModelRole): Promise<void> {
+		await (await this.#required(sessionId)).setModelRole(role);
 	}
 	async handoff(sessionId: string): Promise<void> {
 		await (await this.#required(sessionId)).handoff();

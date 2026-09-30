@@ -67,6 +67,9 @@ function stubHistory(sessions: SessionMeta[] = []): History {
 		async readTail() {
 			return { items: [], messageKeys: [] };
 		},
+		async readModelRole() {
+			return "default" as const;
+		},
 		async recentProjects() {
 			return [];
 		},

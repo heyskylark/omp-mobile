@@ -77,12 +77,20 @@ if (checkSim) {
 			string,
 			{ udid: string; name: string; state: string }[]
 		>;
-		const dev = Object.values(devices)
-			.flat()
-			.find((d) => d.udid === udid);
-		if (!dev) fail(`simulator ${udid} does not exist`);
-		else if (dev.name !== `omp-verify-${runId}`) fail(`simulator ${udid} is "${dev.name}", not this run's`);
-		else dev.state === "Booted" ? ok(`simulator ${dev.name} ${udid} Booted`) : fail(`simulator state ${dev.state}`);
+		const found = Object.entries(devices)
+			.flatMap(([runtime, list]) => list.map((dev) => ({ runtime, dev })))
+			.find(({ dev }) => dev.udid === udid);
+		if (!found) fail(`simulator ${udid} does not exist`);
+		else if (found.dev.name !== `omp-verify-${runId}`) fail(`simulator ${udid} is "${found.dev.name}", not this run's`);
+		else {
+			const { runtime, dev } = found;
+			dev.state === "Booted" ? ok(`simulator ${dev.name} ${udid} Booted`) : fail(`simulator state ${dev.state}`);
+			runtime.includes(".SimRuntime.iOS-26-")
+				? ok(`simulator runtime ${runtime}`)
+				: fail(
+						`simulator runtime ${runtime} is not iOS 26.x (the app crashes at launch on iOS 27); run cleanup.sh ${runId}, then prepare-run.sh and sim-create.sh with a new run id`,
+					);
+		}
 
 		const bundleId = process.env.OMP_BUNDLE_ID ?? "com.heyskylark.ompmobile";
 		const container = run(["xcrun", "simctl", "get_app_container", udid, bundleId, "app"]);

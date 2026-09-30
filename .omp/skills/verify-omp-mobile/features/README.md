@@ -28,7 +28,8 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 ## Features
 
 - [Pairing a computer](./pairing.md) — deep link, typed link, paste button, QR, rejected links, re-pair replacement, remove computer.
-- [Session history](./session-history.md) — session list, transcript, older-page loading, thought and tool expansion, empty history.
+- [Session history](./session-history.md) — session list, search and project filter, transcript, older-page loading, thought and tool expansion, empty history.
 - [New session from the phone](./new-session.md) — folder browser or recent project, first prompt, roots confinement.
 - [Live session, questions, and approvals](./live-session-interactions.md) — approve/deny, questions, follow-up, stop, hand off, terminal (Collab) sessions, notification actions.
+- [Model roles and the composer](./model-role.md) — compact pill and expanded toolbar, role slider, new-session role, switching an open session.
 - [Menu bar app](./menubar.md) — pairing window and consumed-code confirmation, status panel and status item, remove device, offline.

@@ -2,6 +2,9 @@ import type {
 	ApiError,
 	CreateSessionRequest,
 	DirectoryListing,
+	ModelRole,
+	ModelRoleRequest,
+	ModelRoleResponse,
 	PairRequest,
 	PairResponse,
 	PromptRequest,
@@ -99,10 +102,12 @@ export class OmpApi {
 		);
 	}
 
-	sessions(cursor?: string, limit = 30) {
-		const query = new URLSearchParams({ limit: String(limit) });
-		if (cursor) query.set("cursor", cursor);
-		return this.request(`/v1/sessions?${query}`, { method: "GET" }, typed<SessionListPage>("sessions", ["items"]));
+	sessions({ cursor, project, query }: { cursor?: string; project?: string; query?: string } = {}) {
+		const params = new URLSearchParams({ limit: "30" });
+		if (cursor) params.set("cursor", cursor);
+		if (project) params.set("project", project);
+		if (query) params.set("q", query);
+		return this.request(`/v1/sessions?${params}`, { method: "GET" }, typed<SessionListPage>("sessions", ["items"]));
 	}
 
 	snapshot(sessionId: string, limit = 40) {
@@ -142,6 +147,15 @@ export class OmpApi {
 
 	abort(sessionId: string) {
 		return this.request(`/v1/sessions/${encodeURIComponent(sessionId)}/abort`, { method: "POST" }, () => undefined);
+	}
+
+	setModelRole(sessionId: string, role: ModelRole): Promise<ModelRoleResponse> {
+		const body: ModelRoleRequest = { role };
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/model-role`,
+			{ method: "POST", body: JSON.stringify(body) },
+			typed<ModelRoleResponse>("model role", ["modelRole"]),
+		);
 	}
 
 	handoff(sessionId: string) {

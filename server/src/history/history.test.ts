@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { appendFile, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHistory, InvalidHistoryCursorError, ProjectPathError } from "./index";
@@ -168,6 +168,39 @@ describe("OMP JSONL history", () => {
 		});
 	});
 
+	test("reads the model role from the newest role entry on the active branch", async () => {
+		const { history, file } = await fixture();
+		expect(await history.readModelRole("session-1")).toBe("default");
+		let parentId = "c1";
+		const append = async (id: string, entry: Record<string, unknown>, parent = parentId) => {
+			await appendFile(
+				file,
+				`${JSON.stringify({ id, parentId: parent, timestamp: "2026-01-01T00:00:07.000Z", ...entry })}\n`,
+			);
+			parentId = id;
+		};
+		await appendFile(file, "}\n");
+		// Phone switch: OMP's default-role model_change, then the extension's role entry.
+		await append("m1", { type: "model_change", model: "anthropic/opus", role: "default" });
+		await append("k1", { type: "custom", customType: "omp-mobile-model-role", data: { role: "smol" } });
+		expect(await history.readModelRole("session-1")).toBe("smol");
+		// Retry fallback and its restore never change the role.
+		await append("f1", { type: "model_change", model: "openai/gpt", role: "fallback" });
+		expect(await history.readModelRole("session-1")).toBe("smol");
+		// A terminal role cycle after the phone switch wins.
+		await append("m2", { type: "model_change", model: "openai/gpt", role: "slow" });
+		expect(await history.readModelRole("session-1")).toBe("slow");
+		await append("m3", { type: "model_change", model: "openai/gpt", role: "temporary" });
+		expect(await history.readModelRole("session-1")).toBeNull();
+		// Branching back above the terminal switches restores the phone's role.
+		await append(
+			"u3",
+			{ type: "message", message: { role: "user", timestamp: 1767225608000, content: "Branch" } },
+			"k1",
+		);
+		expect(await history.readModelRole("session-1")).toBe("smol");
+	});
+
 	test("lists metadata and confines directory browsing across symlinks", async () => {
 		const { root, project, history } = await fixture();
 		const list = await history.listSessions({ limit: 30 });
@@ -192,5 +225,108 @@ describe("OMP JSONL history", () => {
 		const refreshed = await history.listDirectories(join(root, "projects"));
 		expect(refreshed.entries.map((entry) => entry.name)).toEqual(["alpha"]);
 		await expect(history.resolveProjectDir(join(root, "projects", "escape"))).rejects.toBeInstanceOf(ProjectPathError);
+	});
+});
+
+describe("filtered session listing", () => {
+	const sessions = [
+		{ id: "login", project: "alpha", title: "Fix login redirect bug", minutesAgo: 1 },
+		{ id: "add-search", project: "alpha", title: "Add session search", minutesAgo: 2 },
+		{ id: "push", project: "alpha", title: "Refactor push notifications", minutesAgo: 3 },
+		{ id: "ordering", project: "beta", title: "Session search results ordering", minutesAgo: 4 },
+		{ id: "readme", project: "beta", title: "Update README", minutesAgo: 5 },
+		{ id: "catalog", project: "beta", title: "Searching the catalog", minutesAgo: 6 },
+		{ id: "version", project: "gamma", title: "Investigate outdated database version", minutesAgo: 7 },
+	];
+
+	async function catalog() {
+		const root = await mkdtemp(join(tmpdir(), "omp-mobile-filter-"));
+		temporary.push(root);
+		const sessionsDir = join(root, "sessions");
+		await mkdir(join(sessionsDir, "bucket"), { recursive: true });
+		const cwd = (project: string) => join(root, "projects", project);
+		const files: Record<string, string> = {};
+		for (const session of sessions) {
+			const file = join(sessionsDir, "bucket", `${session.id}.jsonl`);
+			files[session.id] = file;
+			const header = { type: "session", version: 3, id: session.id, cwd: cwd(session.project), title: session.title };
+			await writeFile(file, JSON.stringify(header) + "\n");
+			const updated = new Date(Date.UTC(2026, 0, 1, 12, 0) - session.minutesAgo * 60_000);
+			await utimes(file, updated, updated);
+		}
+		const history = createHistory({
+			sessionsDir,
+			blobsDir: join(root, "blobs"),
+			roots: [join(root, "projects")],
+			cursorSecret: new TextEncoder().encode("secret"),
+		});
+		return { history, cwd, files };
+	}
+
+	test("keeps newest-first order and narrows to an exact project cwd", async () => {
+		const { history, cwd } = await catalog();
+		const ids = async (opts: { project?: string; query?: string }) =>
+			(await history.listSessions({ limit: 30, ...opts })).items.map((item) => item.id);
+		expect(await ids({})).toEqual(["login", "add-search", "push", "ordering", "readme", "catalog", "version"]);
+		expect(await ids({ project: cwd("beta") })).toEqual(["ordering", "readme", "catalog"]);
+		expect(await ids({ project: `${cwd("beta")}/` })).toEqual([]);
+		expect(await ids({ project: cwd("beta"), query: "   " })).toEqual(["ordering", "readme", "catalog"]);
+	});
+
+	test("ranks fuzzy title matches by relevance before recency and drops misses", async () => {
+		const { history, cwd } = await catalog();
+		const titles = async (opts: { project?: string; query?: string }) =>
+			(await history.listSessions({ limit: 30, ...opts })).items.map((item) => item.title);
+		// Equal scores fall back to newest first; the weaker match stays last even though it is newer.
+		expect(await titles({ query: "search" })).toEqual([
+			"Add session search",
+			"Searching the catalog",
+			"Session search results ordering",
+		]);
+		// A one-letter typo still matches; "sesion" is also one edit from "version" but that is not a close match.
+		expect(await titles({ query: "  sesion " })).toEqual(["Add session search", "Session search results ordering"]);
+		expect(await titles({ query: "readme", project: cwd("alpha") })).toEqual([]);
+		expect(await titles({ query: "kubernetes" })).toEqual([]);
+	});
+
+	test("pages through filtered results with cursors bound to the filter", async () => {
+		const { history, cwd } = await catalog();
+		const project = cwd("alpha");
+		const seen: string[] = [];
+		let cursor: string | undefined;
+		do {
+			const page = await history.listSessions({ limit: 1, project, query: "search", cursor });
+			seen.push(...page.items.map((item) => item.id));
+			cursor = page.nextCursor;
+		} while (cursor);
+		expect(seen).toEqual(["add-search"]);
+
+		const first = await history.listSessions({ limit: 2, query: "search" });
+		expect(first.items.map((item) => item.id)).toEqual(["add-search", "catalog"]);
+		const second = await history.listSessions({ limit: 2, query: " search ", cursor: first.nextCursor });
+		expect(second).toEqual({ items: [expect.objectContaining({ id: "ordering" })] });
+
+		const valid = first.nextCursor!;
+		const tampered = valid.slice(0, 4) + (valid[4] === "A" ? "B" : "A") + valid.slice(5);
+		const rejected = [
+			{ query: "searc", cursor: valid },
+			{ cursor: valid },
+			{ query: "search", project, cursor: valid },
+			{ query: "search", cursor: tampered },
+			{ query: "search", cursor: "not-a-cursor" },
+		];
+		for (const opts of rejected)
+			await expect(history.listSessions({ limit: 2, ...opts })).rejects.toBeInstanceOf(InvalidHistoryCursorError);
+	});
+
+	test("rejects a cursor whose offset is past the end of the filtered list", async () => {
+		const { history, files } = await catalog();
+		const first = await history.listSessions({ limit: 1, query: "sesion" });
+		expect(first.nextCursor).toBeString();
+		await rm(files["add-search"]!);
+		await rm(files["ordering"]!);
+		await expect(history.listSessions({ limit: 1, query: "sesion", cursor: first.nextCursor })).rejects.toBeInstanceOf(
+			InvalidHistoryCursorError,
+		);
 	});
 });

@@ -1,0 +1,42 @@
+# Searches and filters a computer's session list.
+# env: MACHINE_NAME; QUERY (typo/partial title query) and QUERY_TITLE (a title it matches);
+# OTHER_TITLE (a title the query must hide); PROJECT_NAME (a project chip) and PROJECT_TITLE
+# (a title only in that project); NO_MATCH (a query that matches nothing). Titles are regex-escaped.
+appId: com.heyskylark.ompmobile
+name: session-search
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: "${OTHER_TITLE},.*"
+    timeout: 30000
+- assertVisible: "All.*"
+- assertVisible: "${PROJECT_NAME}.*"
+- takeScreenshot: search-01-list
+- tapOn: "Search sessions"
+- inputText: "${QUERY}"
+- extendedWaitUntil:
+    notVisible: "${OTHER_TITLE},.*"
+    timeout: 10000
+- assertVisible: "${QUERY_TITLE},.*"
+- takeScreenshot: search-02-query
+- eraseText: 40
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "${OTHER_TITLE},.*"
+    timeout: 10000
+- tapOn: "${PROJECT_NAME}.*"
+- extendedWaitUntil:
+    notVisible: "${OTHER_TITLE},.*"
+    timeout: 10000
+- assertVisible: "${PROJECT_TITLE},.*"
+- takeScreenshot: search-03-project
+- tapOn: "Search sessions"
+- inputText: "${NO_MATCH}"
+- extendedWaitUntil:
+    visible: "No matching sessions"
+    timeout: 10000
+- takeScreenshot: search-04-no-match

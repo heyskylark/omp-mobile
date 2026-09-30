@@ -9,6 +9,6 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test"
   },
-  "dependencies": { "@omp-mobile/protocol": "workspace:*", "zod": "^4.1.0" },
+  "dependencies": { "@omp-mobile/protocol": "workspace:*", "fuse.js": "^7.5.0", "zod": "^4.1.0" },
   "devDependencies": { "@types/bun": "latest", "typescript": "^6.0.3" }
 }

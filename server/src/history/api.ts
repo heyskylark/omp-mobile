@@ -1,4 +1,11 @@
-import type { DirectoryListing, RecentProject, SessionStatus, TimelineItem, TimelinePage } from "@omp-mobile/protocol";
+import type {
+	DirectoryListing,
+	ModelRole,
+	RecentProject,
+	SessionStatus,
+	TimelineItem,
+	TimelinePage,
+} from "@omp-mobile/protocol";
 
 /** Everything the server knows about a session from its JSONL file alone. */
 export interface SessionMeta {
@@ -27,12 +34,18 @@ export interface DurableTail {
 }
 
 export interface History {
-	listSessions(opts: { cursor?: string; limit: number }): Promise<SessionMetaPage>;
+	/**
+	 * Sessions filtered to an exact `project` cwd and a fuzzy title `query` (trimmed; empty means none),
+	 * then paged. A cursor is only valid for the filter it was issued with.
+	 */
+	listSessions(opts: { cursor?: string; limit: number; project?: string; query?: string }): Promise<SessionMetaPage>;
 	getSession(id: string): Promise<SessionMeta | null>;
 	/** Newest page when `before` is absent; items ascending within the page. */
 	readTimeline(id: string, opts: { before?: string; limit: number }): Promise<TimelinePage>;
 	/** Items on the active chain after `afterEntryId` (all items when absent, bounded by `limit`). */
 	readTail(id: string, opts: { afterEntryId?: string; limit: number }): Promise<DurableTail>;
+	/** Active model role on the session's current branch; null when it runs a model picked outside those roles. */
+	readModelRole(id: string): Promise<ModelRole | null>;
 	recentProjects(limit: number): Promise<RecentProject[]>;
 	listDirectories(path: string | undefined): Promise<DirectoryListing>;
 	/** Resolve and validate a cwd for a new session: must be an existing directory inside the allowed roots. */

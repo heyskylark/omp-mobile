@@ -8,6 +8,19 @@
   write may belong to another live session. Leave it alone and work in a new
   worktree instead of switching branches, resetting, stashing, or committing in
   that checkout.
+- Treat the primary checkout (the repository root on `main`) as read-only
+  except for fast-forwarding `main`. Make every change, however small, in the
+  deliverable's own worktree at `../omp-mobile-<branch-slug>`, so overlapping
+  tasks never share a working tree, index, or `node_modules`.
+- Reuse an existing worktree only when it belongs to the same deliverable;
+  `git worktree list` shows which branch each one holds. Never edit, reset, or
+  remove another deliverable's worktree. Remove your own
+  (`git worktree remove ../omp-mobile-<branch-slug>`) only after its pull
+  request is merged or closed.
+- Concurrent tasks also share machine resources. Give each verification run
+  its own ports, simulator, and scratch home (see `verify-omp-mobile`), and do
+  not run `bun run e2e` while another task is running it: it binds the fixed
+  ports 18787/18788.
 - Use OMP subagents for bounded slices within the current deliverable; agree on
   shared interfaces before parallel implementation.
 
