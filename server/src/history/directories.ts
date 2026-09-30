@@ -1,5 +1,6 @@
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { readdir, realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import type { DirectoryListing } from "@omp-mobile/protocol";
 
 export class ProjectPathError extends Error {
@@ -14,6 +15,23 @@ function inside(path: string, root: string) {
 	const rel = relative(root, path);
 	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
+
+// macOS holds any read inside these locations until the user answers a privacy
+// (TCC) prompt on the Mac, so probing them while listing their parent would stall
+// the request indefinitely. Folders themselves may be stat'ed; only their contents
+// are guarded.
+const privacyGuarded = (() => {
+	if (process.platform !== "darwin") return () => false;
+	const home = homedir();
+	const library = join(home, "Library");
+	const folders = new Set(
+		["Desktop", "Documents", "Downloads", "Library/Mobile Documents"].map((name) => join(home, name)),
+	);
+	const parents = new Set(
+		["CloudStorage", "Containers", "Group Containers"].map((name) => join(library, name)).concat("/Volumes"),
+	);
+	return (path: string) => folders.has(path) || parents.has(dirname(path));
+})();
 
 export class DirectoryBrowser {
 	readonly #configuredRoots: string[];
@@ -74,10 +92,11 @@ export class DirectoryBrowser {
 				continue;
 			}
 			let isGitRepo = false;
-			try {
-				await stat(join(target, ".git"));
-				isGitRepo = true;
-			} catch {}
+			if (!privacyGuarded(target))
+				try {
+					await stat(join(target, ".git"));
+					isGitRepo = true;
+				} catch {}
 			entries.push({ name: basename(candidate), path: target, isGitRepo, hasSessions: cwds.has(target) });
 		}
 		entries.sort((left, right) => left.name.localeCompare(right.name));
