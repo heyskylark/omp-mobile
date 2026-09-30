@@ -185,7 +185,15 @@ export interface RespondRequest {
 }
 
 export interface ApiError {
-	code: "unauthorized" | "not_found" | "bad_request" | "conflict" | "unavailable" | "protocol_mismatch" | "forbidden";
+	code:
+		| "unauthorized"
+		| "not_found"
+		| "bad_request"
+		| "invalid_cursor"
+		| "conflict"
+		| "unavailable"
+		| "protocol_mismatch"
+		| "forbidden";
 	message: string;
 }
 

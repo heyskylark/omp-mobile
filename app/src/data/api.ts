@@ -99,10 +99,12 @@ export class OmpApi {
 		);
 	}
 
-	sessions(cursor?: string, limit = 30) {
-		const query = new URLSearchParams({ limit: String(limit) });
-		if (cursor) query.set("cursor", cursor);
-		return this.request(`/v1/sessions?${query}`, { method: "GET" }, typed<SessionListPage>("sessions", ["items"]));
+	sessions({ cursor, project, query }: { cursor?: string; project?: string; query?: string } = {}) {
+		const params = new URLSearchParams({ limit: "30" });
+		if (cursor) params.set("cursor", cursor);
+		if (project) params.set("project", project);
+		if (query) params.set("q", query);
+		return this.request(`/v1/sessions?${params}`, { method: "GET" }, typed<SessionListPage>("sessions", ["items"]));
 	}
 
 	snapshot(sessionId: string, limit = 40) {

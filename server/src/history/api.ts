@@ -27,7 +27,11 @@ export interface DurableTail {
 }
 
 export interface History {
-	listSessions(opts: { cursor?: string; limit: number }): Promise<SessionMetaPage>;
+	/**
+	 * Sessions filtered to an exact `project` cwd and a fuzzy title `query` (trimmed; empty means none),
+	 * then paged. A cursor is only valid for the filter it was issued with.
+	 */
+	listSessions(opts: { cursor?: string; limit: number; project?: string; query?: string }): Promise<SessionMetaPage>;
 	getSession(id: string): Promise<SessionMeta | null>;
 	/** Newest page when `before` is absent; items ascending within the page. */
 	readTimeline(id: string, opts: { before?: string; limit: number }): Promise<TimelinePage>;

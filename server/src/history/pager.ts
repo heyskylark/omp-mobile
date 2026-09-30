@@ -35,7 +35,7 @@ interface CursorPayload extends PagePosition {
 export class InvalidHistoryCursorError extends Error {
 	readonly code = "INVALID_CURSOR";
 	constructor() {
-		super("Invalid or expired timeline cursor");
+		super("Invalid or expired cursor");
 		this.name = "InvalidHistoryCursorError";
 	}
 }

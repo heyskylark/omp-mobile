@@ -2,8 +2,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { AdminStatus, ServerMessage, SessionSnapshot } from "@omp-mobile/protocol";
+import type { AdminStatus, ServerMessage, SessionSnapshot, SessionSummary } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
+import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
 import { createDeviceStore } from "../store/devices.ts";
 import { createHttpHandler, startHttp, type HttpOptions, type HttpService } from "./index.ts";
@@ -40,8 +41,9 @@ class FakeHub implements LiveHub {
 	overlay() {
 		return { liveness: { kind: "idle" as const }, pendingCount: 0 };
 	}
+	active: SessionSummary[] = [];
 	activeSummaries() {
-		return [];
+		return this.active;
 	}
 	async snapshot() {
 		return snapshot;
@@ -262,5 +264,56 @@ describe("HTTP API", () => {
 		await promise;
 		expect(messages[0]?.type).toBe("hello");
 		ws.close();
+	});
+
+	test("filters page 1 live sessions like history and passes the filter to history", async () => {
+		const { options, hub, token } = await fixture();
+		const requests: Parameters<History["listSessions"]>[0][] = [];
+		options.history = {
+			...history,
+			async listSessions(opts) {
+				requests.push(opts);
+				return { items: [meta] };
+			},
+		};
+		const live = (id: string, title: string, path: string): SessionSummary => ({
+			...snapshot.session,
+			id,
+			title,
+			project: { path, name: "project" },
+			updatedAt: "2026-01-02T00:00:00.000Z",
+		});
+		hub.active = [
+			live("live-match", "Session search draft", "/tmp/project"),
+			live("live-other-project", "Session", "/tmp/other"),
+			live("live-miss", "Deploy", "/tmp/project"),
+		];
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const response = await handler(
+			new Request("http://mac/v1/sessions?limit=30&project=%2Ftmp%2Fproject&q=sesion", {
+				headers: { authorization: `Bearer ${token}` },
+			}),
+		);
+		const body = (await response.json()) as { items: SessionSummary[] };
+		expect(requests).toEqual([{ cursor: undefined, limit: 30, project: "/tmp/project", query: "sesion" }]);
+		// The closer title outranks the newer live session.
+		expect(body.items.map((item) => item.id)).toEqual(["s1", "live-match"]);
+	});
+
+	test("maps a stale or mismatched cursor to 400 invalid_cursor", async () => {
+		const { options, token } = await fixture();
+		options.history = {
+			...history,
+			async listSessions({ cursor }) {
+				if (cursor) throw new InvalidHistoryCursorError();
+				return { items: [meta] };
+			},
+		};
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const response = await handler(
+			new Request("http://mac/v1/sessions?cursor=stale&q=session", { headers: { authorization: `Bearer ${token}` } }),
+		);
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ code: "invalid_cursor" });
 	});
 });
