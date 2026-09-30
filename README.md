@@ -64,7 +64,7 @@ When you close a terminal session, its Collab room closes. After the server sees
 
 - macOS with [Bun](https://bun.sh) 1.3.14 or later and OMP on your `PATH`. OMP 18.4.3 and 18.4.4 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
 - Tailscale running on the computer and on the iPhone, signed in to the same tailnet with MagicDNS on.
-- For the iPhone app: Xcode 26.2 or later, which needs macOS Sequoia 15.6 or later. TestFlight also needs an Apple Developer Program membership and an [Expo](https://expo.dev) account for EAS builds. A free Apple Account can [install the app directly](#install-with-a-free-apple-account) for 7 days at a time.
+- For the iPhone app: iOS 16 or later on the phone, and Xcode 26.2 or later, which needs macOS Sequoia 15.6 or later. Xcode 27 builds work too. TestFlight also needs an Apple Developer Program membership and an [Expo](https://expo.dev) account for EAS builds. A free Apple Account can [install the app directly](#install-with-a-free-apple-account) for 7 days at a time.
 
 ## Install the server on a computer
 
@@ -262,6 +262,7 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 ## Known limitations
 
 - The app targets Expo SDK 55 because SDK 56 and later need Xcode 26.4. After you update Xcode, upgrade with `bunx expo install expo@latest --fix` in `app/`.
+- The minimum iOS version is 16.0 instead of SDK 55's default of 15.1. With the iOS 27 SDK, `expo-router` 55 uses APIs that require iOS 16, and `app/plugins/with-pod-deployment-target.js` raises every pod target to the app's deployment target because Xcode 27 rejects the iOS 12.4 and 9.0 targets that some pod resource bundles declare.
 - `scripts/testflight.sh` has not been run yet, because it needs your Apple and Expo accounts. The app config sets `aps-environment` to `development`, and App Store export is expected to switch it to `production` from the distribution profile. Confirm that with the first TestFlight build before relying on push.
 - Push delivery through APNs and decryption in the notification service extension have not been tested on a physical device. The Simulator shows the notification actions and runs the Approve action end to end, but it did not run the extension for `simctl push`.
 - A session opened in a terminal after the server started working on it is not blocked by OMP. The server marks it as a conflict, stops accepting phone input for it, and closes its own process when the turn settles.

@@ -6,7 +6,7 @@ module.exports = (config) => {
     name: "OmpNotificationService",
     displayName: "OMP Notification Service",
     bundleIdentifier: ".notification-service",
-    deploymentTarget: "15.1",
+    deploymentTarget: "16.0",
     frameworks: ["CryptoKit", "Security", "UserNotifications"],
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${bundleId}.shared`],
