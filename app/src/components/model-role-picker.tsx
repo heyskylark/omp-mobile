@@ -47,10 +47,11 @@ const DOT = 6;
 const LAST = MODEL_ROLES.length - 1;
 // Keeps the snap overshoot visible without flinging the knob off the track ends.
 const OVERSHOOT = 0.1;
-const SNAP = { damping: 11, stiffness: 190, mass: 0.8 };
+// Bouncy springs sit near a 0.6 damping ratio: one visible overshoot, settled in about 0.3 s.
+const SNAP = { damping: 20, stiffness: 340, mass: 0.8 };
 const FOLLOW = { damping: 26, stiffness: 700, mass: 0.6 };
-const SQUISH = { damping: 12, stiffness: 320 };
-const ENTER = { damping: 14, stiffness: 210, mass: 0.9 };
+const SQUISH = { damping: 24, stiffness: 420 };
+const ENTER = { damping: 22, stiffness: 380, mass: 0.8 };
 const DISMISS_AFTER_PICK_MS = 350;
 const EXIT_MS = 180;
 
