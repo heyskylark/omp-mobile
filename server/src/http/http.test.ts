@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AdminStatus, ServerMessage, SessionSnapshot, SessionSummary } from "@omp-mobile/protocol";
@@ -215,6 +215,41 @@ describe("HTTP API", () => {
 		expect(devices.list().map((device) => device.id)).toEqual([paired.deviceId]);
 		expect(await devices.authenticate(token)).toBeNull();
 		expect((await devices.authenticate(paired.token))?.id).toBe(paired.deviceId);
+	});
+
+	test("renaming the computer keeps other config keys and updates every name the server reports", async () => {
+		const { options, token } = await fixture();
+		const configFile = join(options.config.dataDir, "config.json");
+		await writeFile(configFile, JSON.stringify({ port: 9999, roots: ["/tmp"], machineName: "Old" }));
+		const app = createHttpHandler(options, "app", () => "http://mac:8787");
+		const loopback = createHttpHandler(options, "loopback", () => "http://mac:8787");
+		const rename = (machineName: string) =>
+			app(
+				new Request("http://mac/v1/machine/name", {
+					method: "PUT",
+					headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+					body: JSON.stringify({ machineName }),
+				}),
+			);
+
+		const renamed = await rename("  Studio Mac  ");
+
+		expect(renamed.status).toBe(200);
+		expect(await renamed.json()).toMatchObject({ machineId: "machine", machineName: "Studio Mac" });
+		expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({
+			port: 9999,
+			roots: ["/tmp"],
+			machineName: "Studio Mac",
+		});
+		const info = await app(new Request("http://mac/v1/info", { headers: { authorization: `Bearer ${token}` } }));
+		expect(await info.json()).toMatchObject({ machineName: "Studio Mac" });
+		const status = await loopback(
+			new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }),
+		);
+		expect(await status.json()).toMatchObject({ machineName: "Studio Mac" });
+		expect((await rename("   ")).status).toBe(400);
+		expect((await rename("x".repeat(65))).status).toBe(400);
+		expect(options.config.machineName).toBe("Studio Mac");
 	});
 
 	test("admin status reports which device consumed a pairing code", async () => {

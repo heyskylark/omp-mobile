@@ -13,6 +13,13 @@ export interface ServerInfo {
 	capabilities: Capability[];
 }
 
+export const MAX_MACHINE_NAME_LENGTH = 64;
+
+/** Body of `PUT /v1/machine/name`; the response is the updated `ServerInfo`. */
+export interface MachineNameRequest {
+	machineName: string;
+}
+
 export type Liveness =
 	| { kind: "idle" }
 	| { kind: "server"; phase: "starting" | "ready" | "working" | "settling" }
