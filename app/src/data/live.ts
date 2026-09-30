@@ -52,8 +52,8 @@ class MachineSocket {
 	private resyncListeners = new Set<ResyncListener>();
 	private subscriptions = new Map<string, number>();
 	private retry = 0;
-	private retryTimer?: number;
-	private heartbeat?: number;
+	private retryTimer?: ReturnType<typeof setTimeout>;
+	private heartbeat?: ReturnType<typeof setInterval>;
 	private lastMessageAt = 0;
 	private stopped = false;
 	private background = false;
