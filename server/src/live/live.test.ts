@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	normalizeCollabUiRequest,
 	normalizeRpcUiRequest,
@@ -103,6 +106,83 @@ test("terminal session_start creates ownership before history catalog catches up
 	expect(await hub.snapshot("new-terminal", 40)).toEqual(
 		expect.objectContaining({ items: [], pending: [], session: expect.objectContaining({ id: "new-terminal" }) }),
 	);
+});
+
+describe("server-owned session", () => {
+	// Minimal `omp --mode rpc-ui`: answers commands and runs each prompt as one turn with one finished bash call.
+	const fakeOmp = `#!/usr/bin/env bun
+const out = (frame) => process.stdout.write(JSON.stringify(frame) + "\\n");
+out({ type: "ready" });
+let turn = 0;
+for await (const line of console) {
+	if (!line.trim()) continue;
+	const command = JSON.parse(line);
+	if (command.type === "get_state")
+		out({ type: "response", id: command.id, success: true, data: { sessionId: "fake", sessionFile: "/tmp/fake.jsonl" } });
+	else out({ type: "response", id: command.id, success: true });
+	if (command.type !== "prompt") continue;
+	const call = "call-" + ++turn;
+	out({ type: "agent_start" });
+	out({ type: "tool_execution_start", toolCallId: call, toolName: "bash", args: { command: "true" } });
+	out({ type: "tool_execution_end", toolCallId: call, toolName: "bash", result: { content: [{ type: "text", text: "ok" }] } });
+	out({ type: "agent_end" });
+	out({ type: "session_settled" });
+}
+`;
+
+	// The fake runs as a real child process, so the test polls for its effects instead of faking time.
+	async function until(condition: () => boolean | Promise<boolean>, label: string) {
+		for (const deadline = Date.now() + 3_000; !(await condition()); await Bun.sleep(10))
+			if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
+	}
+
+	test("keeps following OMP after a history read fails and does not replay finished tools", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-"));
+		const ompPath = join(dir, "omp");
+		await writeFile(ompPath, fakeOmp, { mode: 0o755 });
+		let failNextRead = true;
+		const hub = createLiveHub({
+			history: {
+				...stubHistory(),
+				async readTail() {
+					if (failNextRead) {
+						failNextRead = false;
+						throw new Error("history unavailable");
+					}
+					return { items: [], messageKeys: [] };
+				},
+			},
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/extension.ts",
+			settleGraceMs: 60_000,
+		});
+		const errors = spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
+			const ready = () => {
+				const liveness = hub.overlay(sessionId).liveness;
+				return liveness.kind === "server" && liveness.phase === "ready";
+			};
+			await until(() => ready() && !failNextRead, "the first turn to settle");
+			// A reader stopped by the failed read never delivers this response; the race keeps the test from hanging.
+			expect(
+				await Promise.race([
+					hub.prompt(sessionId, { operationId: "op-2", text: "second" }),
+					Bun.sleep(3_000).then(() => "no response"),
+				]),
+			).toEqual({ state: "accepted" });
+			await until(ready, "the second turn to settle");
+			await until(
+				async () => (await hub.snapshot(sessionId, 40))?.items.length === 0,
+				"finished tools to leave the snapshot",
+			);
+		} finally {
+			errors.mockRestore();
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("session_title from the extension", () => {
