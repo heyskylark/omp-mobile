@@ -279,6 +279,7 @@ public final class OmpNativeAppDelegateSubscriber: ExpoAppDelegateSubscriber {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     OmpNotificationCoordinator.shared.install()
+    _ = OmpImagePaste.install
     if let userInfo = launchOptions?[.remoteNotification] as? [AnyHashable: Any] {
       OmpNotificationCoordinator.shared.captureLaunch(userInfo: userInfo)
     }

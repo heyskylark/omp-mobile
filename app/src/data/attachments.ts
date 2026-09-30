@@ -1,7 +1,7 @@
 import type { ImageAttachment } from "@omp-mobile/protocol";
-import * as Clipboard from "expo-clipboard";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import type { PastedImage } from "../native/types";
 
 /** An attachment ready to send, plus a local file URI for the composer preview. */
 export interface PickedImage extends ImageAttachment {
@@ -11,8 +11,8 @@ export interface PickedImage extends ImageAttachment {
 // Keeps screenshots legible while bounding the upload to a few hundred KB per image.
 const MAX_EDGE = 2048;
 
-async function prepare(source: string, width: number, height: number): Promise<PickedImage> {
-	const context = ImageManipulator.manipulate(source);
+export async function prepareImage({ uri, width, height }: PastedImage): Promise<PickedImage> {
+	const context = ImageManipulator.manipulate(uri);
 	if (Math.max(width, height) > MAX_EDGE) context.resize(width >= height ? { width: MAX_EDGE } : { height: MAX_EDGE });
 	const image = await context.renderAsync();
 	try {
@@ -33,11 +33,5 @@ export async function pickFromLibrary(limit: number): Promise<PickedImage[]> {
 		quality: 1,
 	});
 	if (result.canceled) return [];
-	return Promise.all(result.assets.slice(0, limit).map((asset) => prepare(asset.uri, asset.width, asset.height)));
-}
-
-/** Resolves null when the clipboard holds no image. */
-export async function pasteImage(): Promise<PickedImage | null> {
-	const image = await Clipboard.getImageAsync({ format: "png" });
-	return image ? prepare(image.data, image.size.width, image.size.height) : null;
+	return Promise.all(result.assets.slice(0, limit).map(prepareImage));
 }
