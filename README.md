@@ -23,7 +23,7 @@ The menu bar screenshots use sample data.
 ## What you get
 
 - **Session history.** Every OMP session on the computer, newest first, with titles and project folders. Transcripts load a page at a time as you scroll up, so a long session opens instantly.
-- **Live sessions.** Watch the agent stream text, thinking, and tool calls. Send follow-up prompts or stop a turn.
+- **Live sessions.** Watch the agent stream text, thinking, and tool calls. Send follow-up prompts, steer a running turn with a new message, or stop it.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.

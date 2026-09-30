@@ -27,6 +27,16 @@ export function Composer({
 				maxLength={20_000}
 				className="max-h-32 min-h-10 flex-1 px-1 py-2 text-[16px] leading-5 text-primary"
 			/>
+			{!working || value.trim() ? (
+				<Pressable
+					accessibilityLabel={working ? "Steer" : "Send"}
+					disabled={disabled || !value.trim()}
+					onPress={onSend}
+					className="mb-0.5 h-10 w-10 items-center justify-center rounded-full bg-accent disabled:opacity-30"
+				>
+					<Icon name="arrow.up" size={17} />
+				</Pressable>
+			) : null}
 			{working ? (
 				<Pressable
 					accessibilityLabel="Stop"
@@ -35,16 +45,7 @@ export function Composer({
 				>
 					<Icon name="stop.fill" size={14} />
 				</Pressable>
-			) : (
-				<Pressable
-					accessibilityLabel="Send"
-					disabled={disabled || !value.trim()}
-					onPress={onSend}
-					className="mb-0.5 h-10 w-10 items-center justify-center rounded-full bg-accent disabled:opacity-30"
-				>
-					<Icon name="arrow.up" size={17} />
-				</Pressable>
-			)}
+			) : null}
 		</View>
 	);
 }
