@@ -193,13 +193,15 @@ Without an Apple Developer Program membership, Xcode can sign the app with your 
    security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
    ```
 
-3. Choose a bundle identifier that is not already registered by someone else, and export the settings in the shell you build from.
+3. Choose a bundle identifier for this build, and export the settings in the shell you build from.
 
    ```sh
-   export OMP_BUNDLE_ID=com.<your-name>.ompmobile
+   export OMP_BUNDLE_ID=com.<your-name>.ompmobile.dev
    export APPLE_TEAM_ID=<team id>
    export OMP_PERSONAL_TEAM=1
    ```
+
+   Use a different identifier from the one you will ship through TestFlight. Xcode registers the identifier and its `group.` app group to your Personal Team, and you cannot delete a Personal Team's identifiers yourself, so reusing the TestFlight identifier can block your paid team from registering it later. The identifier must also not be registered by anyone else, so `com.heyskylark.ompmobile.dev` works only for the repository owner.
 
    `OMP_PERSONAL_TEAM=1` leaves out the push entitlement that a Personal Team cannot sign.
 
