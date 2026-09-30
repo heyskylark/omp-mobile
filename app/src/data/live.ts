@@ -1,8 +1,13 @@
 import type { ClientMessage, ServerMessage } from "@omp-mobile/protocol";
+import { AppState, type NativeEventSubscription } from "react-native";
 import type { PairedMachine } from "../native/types";
 
 type Listener = (message: ServerMessage) => void;
-type EpochListener = () => void;
+type ResyncListener = () => void;
+
+/** Heartbeat period while the app is active; a socket that stays silent past `STALE_MS` is treated as dead. */
+const PING_MS = 15_000;
+const STALE_MS = 35_000;
 
 interface AuthorizedWebSocketConstructor {
 	new (url: string, protocols: string[] | undefined, options: { headers: Record<string, string> }): WebSocket;
@@ -22,6 +27,7 @@ function parseMessage(raw: unknown): ServerMessage | null {
 				"timeline.upsert",
 				"timeline.retire",
 				"session.update",
+				"session.modelRole",
 				"sessions.changed",
 				"pong",
 				"error",
@@ -34,29 +40,43 @@ function parseMessage(raw: unknown): ServerMessage | null {
 	}
 }
 
+/**
+ * One websocket per machine. iOS suspends the app with the socket open, and messages sent meanwhile can be lost
+ * (a half-open socket, or the server dropping a backlog nobody reads), so the socket closes in the background,
+ * reconnects on return, and pings while active. Every reconnect after the first is a resync: the server re-sends
+ * snapshots for resubscribed sessions, and `onResync` listeners refetch anything else they show.
+ */
 class MachineSocket {
 	private socket: WebSocket | null = null;
 	private listeners = new Set<Listener>();
-	private epochListeners = new Set<EpochListener>();
+	private resyncListeners = new Set<ResyncListener>();
 	private subscriptions = new Map<string, number>();
 	private retry = 0;
-	private retryTimer: ReturnType<typeof setTimeout> | null = null;
+	private retryTimer?: number;
+	private heartbeat?: number;
+	private lastMessageAt = 0;
 	private stopped = false;
-	private epoch: string | null = null;
+	private background = false;
+	private connectedBefore = false;
+	private appState: NativeEventSubscription | null = null;
 
 	constructor(private readonly machine: PairedMachine) {}
 
 	start() {
 		this.stopped = false;
+		this.background = AppState.currentState === "background";
+		this.appState = AppState.addEventListener("change", (state) => {
+			if (state === "background") this.enterBackground();
+			else if (state === "active") this.enterForeground();
+		});
 		this.connect();
 	}
 
 	stop() {
 		this.stopped = true;
-		if (this.retryTimer) clearTimeout(this.retryTimer);
-		this.retryTimer = null;
-		this.socket?.close();
-		this.socket = null;
+		this.appState?.remove();
+		this.appState = null;
+		this.disconnect();
 	}
 
 	onMessage(listener: Listener) {
@@ -64,9 +84,10 @@ class MachineSocket {
 		return () => this.listeners.delete(listener);
 	}
 
-	onEpochChange(listener: EpochListener) {
-		this.epochListeners.add(listener);
-		return () => this.epochListeners.delete(listener);
+	/** Fires after every reconnect, including one to a restarted server; missed pushes are not replayed. */
+	onResync(listener: ResyncListener) {
+		this.resyncListeners.add(listener);
+		return () => this.resyncListeners.delete(listener);
 	}
 
 	subscribe(sessionId: string) {
@@ -82,8 +103,31 @@ class MachineSocket {
 		};
 	}
 
+	private enterBackground() {
+		this.background = true;
+		this.disconnect();
+	}
+
+	private enterForeground() {
+		if (!this.background) return;
+		this.background = false;
+		this.retry = 0;
+		this.connect();
+	}
+
+	/** Drops the socket and any pending retry without scheduling another; `connect` starts over. */
+	private disconnect() {
+		clearTimeout(this.retryTimer);
+		clearInterval(this.heartbeat);
+		const socket = this.socket;
+		this.socket = null;
+		if (!socket) return;
+		socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+		socket.close();
+	}
+
 	private connect() {
-		if (this.stopped || this.socket) return;
+		if (this.stopped || this.background || this.socket) return;
 		const wsUrl = this.machine.url.replace(/^http/, "ws").replace(/\/$/, "") + "/v1/stream";
 		const AuthorizedWebSocket = WebSocket as unknown as AuthorizedWebSocketConstructor;
 		const socket = new AuthorizedWebSocket(wsUrl, undefined, {
@@ -92,24 +136,32 @@ class MachineSocket {
 		this.socket = socket;
 		socket.onopen = () => {
 			this.retry = 0;
+			this.lastMessageAt = Date.now();
 			for (const sessionId of this.subscriptions.keys()) this.send({ type: "subscribe", sessionId });
+			this.heartbeat = setInterval(() => {
+				if (Date.now() - this.lastMessageAt < STALE_MS) this.send({ type: "ping" });
+				else this.reconnectSoon();
+			}, PING_MS);
 		};
 		socket.onmessage = (event) => {
+			this.lastMessageAt = Date.now();
 			const message = parseMessage(event.data);
 			if (!message) return;
 			if (message.type === "hello") {
-				if (this.epoch !== null && this.epoch !== message.epoch) for (const listener of this.epochListeners) listener();
-				this.epoch = message.epoch;
+				if (this.connectedBefore) for (const listener of this.resyncListeners) listener();
+				this.connectedBefore = true;
 			}
 			for (const listener of this.listeners) listener(message);
 		};
-		socket.onerror = () => socket.close();
-		socket.onclose = () => {
-			if (this.socket === socket) this.socket = null;
-			if (this.stopped) return;
-			const delay = Math.min(30_000, 500 * 2 ** this.retry++) * (0.8 + Math.random() * 0.4);
-			this.retryTimer = setTimeout(() => this.connect(), delay);
-		};
+		socket.onerror = () => this.reconnectSoon();
+		socket.onclose = () => this.reconnectSoon();
+	}
+
+	private reconnectSoon() {
+		this.disconnect();
+		if (this.stopped || this.background) return;
+		const delay = Math.min(30_000, 500 * 2 ** this.retry++) * (0.8 + Math.random() * 0.4);
+		this.retryTimer = setTimeout(() => this.connect(), delay);
 	}
 
 	private send(message: ClientMessage) {

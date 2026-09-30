@@ -112,10 +112,10 @@ export default function SessionsScreen() {
 			if (event.type === "sessions.changed") void load();
 		};
 		const offMessage = socket.onMessage(refresh);
-		const offEpoch = socket.onEpochChange(() => void load());
+		const offResync = socket.onResync(() => void load());
 		return () => {
 			offMessage();
-			offEpoch();
+			offResync();
 			release();
 		};
 	}, [machine, load]);

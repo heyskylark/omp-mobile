@@ -19,11 +19,11 @@ import { ModelRoleButton } from "./model-role-picker";
 import { useToast } from "./toast";
 import { Icon } from "./ui";
 
-// Same feel as the model picker: one visible overshoot near a 0.6 damping ratio, then settled.
-const MORPH = LinearTransition.springify().damping(21).stiffness(300);
-const BUTTON_IN = ZoomIn.springify().damping(23).stiffness(380);
+// Same springs as the model picker: 400 ms perceptual (600 ms total) with one small bounce.
+const MORPH = LinearTransition.springify(400).dampingRatio(0.75);
+const BUTTON_IN = ZoomIn.springify(400).dampingRatio(0.75);
 const BUTTON_OUT = ZoomOut.duration(120);
-const TOOLBAR_IN = FadeInDown.springify().damping(22).stiffness(340);
+const TOOLBAR_IN = FadeInDown.springify(400).dampingRatio(0.75);
 const TOOLBAR_OUT = FadeOutDown.duration(120);
 
 const TONES = {
