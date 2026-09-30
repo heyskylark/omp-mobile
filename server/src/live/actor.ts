@@ -318,6 +318,14 @@ export class SessionActor {
 	ingest(event: RawExtensionEvent): void {
 		if (event.sessionFile) this.meta.file = event.sessionFile;
 		if (event.cwd) this.meta.cwd = event.cwd;
+		if (event.event === "session_title") {
+			const title = event.title?.replace(/\s+/g, " ").trim().slice(0, 80);
+			if (title && title !== this.meta.title) {
+				this.meta.title = title;
+				this.#changed(true);
+			}
+			return;
+		}
 		if (event.event === "session_start" && event.mode === "tui") {
 			this.#transition({ type: "terminal.started", pid: event.pid });
 			if (this.state.kind === "conflict") this.#scheduleClose();

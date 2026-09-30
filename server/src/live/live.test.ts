@@ -9,7 +9,8 @@ import {
 	type InteractionRecord,
 } from "./interactions.ts";
 import { publicLiveness, reduceOwnership, type OwnershipState } from "./state.ts";
-import type { History } from "../history/api.ts";
+import type { History, SessionMeta } from "../history/api.ts";
+import type { ServerMessage } from "@omp-mobile/protocol";
 import { createLiveHub } from "./index.ts";
 
 describe("ownership reducer", () => {
@@ -52,13 +53,13 @@ describe("ownership reducer", () => {
 	});
 });
 
-test("terminal session_start creates ownership before history catalog catches up", async () => {
-	const history: History = {
+function stubHistory(sessions: SessionMeta[] = []): History {
+	return {
 		async listSessions() {
-			return { items: [] };
+			return { items: sessions };
 		},
-		async getSession() {
-			return null;
+		async getSession(sessionId) {
+			return sessions.find((session) => session.id === sessionId) ?? null;
 		},
 		async readTimeline() {
 			return { items: [] };
@@ -79,7 +80,15 @@ test("terminal session_start creates ownership before history catalog catches up
 			return path;
 		},
 	};
-	const hub = createLiveHub({ history, ompPath: "omp", relayPort: 0, extensionPath: "/tmp/extension.ts" });
+}
+
+test("terminal session_start creates ownership before history catalog catches up", async () => {
+	const hub = createLiveHub({
+		history: stubHistory(),
+		ompPath: "omp",
+		relayPort: 0,
+		extensionPath: "/tmp/extension.ts",
+	});
 	hub.ingest({ event: "session_start", sessionId: "new-terminal", cwd: "/tmp/project", pid: process.pid, mode: "tui" });
 	for (let turn = 0; turn < 10 && hub.overlay("new-terminal").liveness.kind === "idle"; turn++) await Promise.resolve();
 	expect(hub.activeSummaries()).toEqual([
@@ -94,6 +103,67 @@ test("terminal session_start creates ownership before history catalog catches up
 	expect(await hub.snapshot("new-terminal", 40)).toEqual(
 		expect.objectContaining({ items: [], pending: [], session: expect.objectContaining({ id: "new-terminal" }) }),
 	);
+});
+
+describe("session_title from the extension", () => {
+	const prompt = "I want to plan a weekly irrigation schedule for my backyard vegetable garden. Reply only with OK.";
+	function setup() {
+		const hub = createLiveHub({
+			history: stubHistory([
+				{
+					id: "phone-1",
+					file: "/tmp/project/phone-1.jsonl",
+					cwd: "/tmp/project",
+					title: prompt.slice(0, 80),
+					createdAt: "2026-09-29T00:00:00.000Z",
+					updatedAt: "2026-09-29T00:00:00.000Z",
+					status: "complete",
+				},
+			]),
+			ompPath: "omp",
+			relayPort: 0,
+			extensionPath: "/tmp/extension.ts",
+		});
+		const broadcasts: ServerMessage[] = [];
+		hub.onBroadcast((message) => broadcasts.push(message));
+		const updates: ServerMessage[] = [];
+		hub.subscribe("phone-1", (message) => updates.push(message));
+		const title = (text: string | undefined) =>
+			hub.ingest({ event: "session_title", sessionId: "phone-1", pid: process.pid, mode: "rpc", title: text });
+		const settle = async () => {
+			for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+		};
+		return { hub, broadcasts, updates, title, settle };
+	}
+
+	test("replaces the prompt title for summaries and subscribers and invalidates the list", async () => {
+		const { hub, broadcasts, updates, title, settle } = setup();
+		await settle();
+		title("Plan   Weekly Backyard\nGarden Irrigation");
+		await settle();
+		expect(broadcasts).toEqual([{ type: "sessions.changed" }]);
+		expect(updates).toContainEqual(
+			expect.objectContaining({
+				type: "session.update",
+				sessionId: "phone-1",
+				session: expect.objectContaining({ title: "Plan Weekly Backyard Garden Irrigation" }),
+			}),
+		);
+		expect((await hub.snapshot("phone-1", 40))?.session.title).toBe("Plan Weekly Backyard Garden Irrigation");
+	});
+
+	test("caps titles like the history catalog and ignores empty or unchanged titles", async () => {
+		const { hub, broadcasts, title, settle } = setup();
+		title("x".repeat(120));
+		await settle();
+		expect((await hub.snapshot("phone-1", 40))?.session.title).toBe("x".repeat(80));
+		title("x".repeat(80));
+		title("   ");
+		title(undefined);
+		await settle();
+		expect(broadcasts).toHaveLength(1);
+		expect((await hub.snapshot("phone-1", 40))?.session.title).toBe("x".repeat(80));
+	});
 });
 describe("UI request mapping", () => {
 	test("maps exact RPC approval and ask frames", () => {
