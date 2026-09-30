@@ -1,5 +1,5 @@
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { readdir, realpath, stat } from "node:fs/promises";
+import { readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { DirectoryListing } from "@omp-mobile/protocol";
 
@@ -16,11 +16,11 @@ function inside(path: string, root: string) {
 	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-// macOS holds any read inside these locations until the user answers a privacy
-// (TCC) prompt on the Mac, so probing them while listing their parent would stall
-// the request indefinitely. Folders themselves may be stat'ed; only their contents
-// are guarded.
-const privacyGuarded = (() => {
+// macOS blocks any open or read inside these locations until the user answers a
+// privacy (TCC) prompt on the Mac. Bun's realpath opens its argument, so even
+// resolving ~/Documents stalls. Only the parent's directory entry (readdir, lstat,
+// readlink) is safe to touch.
+const guardedLocation = (() => {
 	if (process.platform !== "darwin") return () => false;
 	const home = homedir();
 	const library = join(home, "Library");
@@ -32,6 +32,14 @@ const privacyGuarded = (() => {
 	);
 	return (path: string) => folders.has(path) || parents.has(dirname(path));
 })();
+
+/** Whether `path` is, or lies inside, a location macOS guards behind a privacy prompt. */
+export function privacyGuarded(path: string) {
+	for (let current = path; ; current = dirname(current)) {
+		if (guardedLocation(current)) return true;
+		if (dirname(current) === current) return false;
+	}
+}
 
 export class DirectoryBrowser {
 	readonly #configuredRoots: string[];
@@ -79,20 +87,27 @@ export class DirectoryBrowser {
 	async list(path: string | undefined): Promise<DirectoryListing> {
 		const { canonical, roots } = await this.#resolveConfined(path);
 		const cwds = await this.#sessionCwds();
+		// Once the listed directory is itself guarded, the user has granted access.
+		const insideGuarded = privacyGuarded(canonical);
+		const touchable = (target: string) => insideGuarded || !privacyGuarded(target);
 		const entries = [];
 		for (const dirent of await readdir(canonical, { withFileTypes: true })) {
 			if (dirent.name.startsWith(".")) continue;
 			const candidate = join(canonical, dirent.name);
-			let target: string;
-			try {
-				target = await realpath(candidate);
-				const info = await stat(target);
-				if (!info.isDirectory() || !roots.some((root) => inside(target, root))) continue;
-			} catch {
-				continue;
-			}
+			// A plain child of a canonical directory is already canonical and inside the roots.
+			let target = candidate;
+			if (dirent.isSymbolicLink()) {
+				try {
+					if (!touchable(resolve(canonical, await readlink(candidate)))) continue;
+					const resolved = await realpath(candidate);
+					if (!(await stat(resolved)).isDirectory() || !roots.some((root) => inside(resolved, root))) continue;
+					target = resolved;
+				} catch {
+					continue;
+				}
+			} else if (!dirent.isDirectory()) continue;
 			let isGitRepo = false;
-			if (!privacyGuarded(target))
+			if (touchable(target))
 				try {
 					await stat(join(target, ".git"));
 					isGitRepo = true;
