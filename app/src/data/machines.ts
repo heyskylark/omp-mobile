@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ServerInfo } from "@omp-mobile/protocol";
 import { OmpNative } from "../../modules/omp-native";
 import { resetMachineSocket } from "./live";
 import type { MachineSecretInput, PairedMachine } from "../native/types";
@@ -10,6 +11,7 @@ interface MachinesState {
 	loadState: LoadState;
 	load(): Promise<void>;
 	save(machine: MachineSecretInput): Promise<void>;
+	applyInfo(machineId: string, info: ServerInfo): Promise<void>;
 	remove(machineId: string): Promise<void>;
 }
 
@@ -32,6 +34,16 @@ export const useMachines = create<MachinesState>((set, get) => ({
 		resetMachineSocket(machine.machineId);
 		const publicMachine: PairedMachine = machine;
 		set({ machines: [...get().machines.filter((item) => item.machineId !== machine.machineId), publicMachine] });
+	},
+	async applyInfo(machineId, info) {
+		const stored = get().machines.find((machine) => machine.machineId === machineId);
+		if (!stored || info.machineId !== machineId || info.machineName === stored.name) return;
+		await OmpNative.renameMachine(machineId, info.machineName);
+		set({
+			machines: get().machines.map((machine) =>
+				machine.machineId === machineId ? { ...machine, name: info.machineName } : machine,
+			),
+		});
 	},
 	async remove(machineId) {
 		await OmpNative.removeMachine(machineId);

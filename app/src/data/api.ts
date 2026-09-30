@@ -2,6 +2,7 @@ import type {
 	ApiError,
 	CreateSessionRequest,
 	DirectoryListing,
+	MachineNameRequest,
 	ModelRole,
 	ModelRoleRequest,
 	ModelRoleResponse,
@@ -40,6 +41,8 @@ function typed<T>(label: string, required: string[]) {
 		return result as T;
 	};
 }
+
+const serverInfo = typed<ServerInfo>("server info", ["protocol", "machineId", "machineName", "capabilities"]);
 
 function errorPayload(value: unknown): ApiError | null {
 	if (typeof value !== "object" || value === null) return null;
@@ -97,11 +100,12 @@ export class OmpApi {
 	}
 
 	info() {
-		return this.request(
-			"/v1/info",
-			{ method: "GET" },
-			typed<ServerInfo>("server info", ["protocol", "machineId", "machineName", "capabilities"]),
-		);
+		return this.request("/v1/info", { method: "GET" }, serverInfo);
+	}
+
+	setMachineName(machineName: string) {
+		const body: MachineNameRequest = { machineName };
+		return this.request("/v1/machine/name", { method: "PUT", body: JSON.stringify(body) }, serverInfo);
 	}
 
 	sessions({ cursor, project, query }: { cursor?: string; project?: string; query?: string } = {}) {

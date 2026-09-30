@@ -3,7 +3,7 @@ import Security
 
 struct MachineRecord: Codable {
   let machineId: String
-  let name: String
+  var name: String
   let url: String
   let deviceId: String
   let token: String

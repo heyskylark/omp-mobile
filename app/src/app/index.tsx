@@ -10,21 +10,26 @@ export default function MachinesScreen() {
 	const machines = useMachines((state) => state.machines);
 	const loadState = useMachines((state) => state.loadState);
 	const load = useMachines((state) => state.load);
+	const applyInfo = useMachines((state) => state.applyInfo);
 	const [online, setOnline] = useState<Record<string, boolean>>({});
 	const [refreshing, setRefreshing] = useState(false);
-	const checkOnline = useCallback(async (current: PairedMachine[]) => {
-		const results = await Promise.all(
-			current.map(async (machine) => {
-				try {
-					await new OmpApi(machine).info();
-					return [machine.machineId, true] as const;
-				} catch {
-					return [machine.machineId, false] as const;
-				}
-			}),
-		);
-		setOnline(Object.fromEntries(results));
-	}, []);
+	const checkOnline = useCallback(
+		async (current: PairedMachine[]) => {
+			const results = await Promise.all(
+				current.map(async (machine) => {
+					try {
+						const info = await new OmpApi(machine).info();
+						await applyInfo(machine.machineId, info);
+						return [machine.machineId, true] as const;
+					} catch {
+						return [machine.machineId, false] as const;
+					}
+				}),
+			);
+			setOnline(Object.fromEntries(results));
+		},
+		[applyInfo],
+	);
 	const refresh = useCallback(async () => {
 		setRefreshing(true);
 		await load();
