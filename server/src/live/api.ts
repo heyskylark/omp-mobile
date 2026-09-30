@@ -32,7 +32,8 @@ export interface ExtensionEvent {
 		| "agent_end"
 		| "tool_execution_start"
 		| "tool_approval_requested"
-		| "tool_approval_resolved";
+		| "tool_approval_resolved"
+		| "session_title";
 	sessionId: string;
 	sessionFile?: string;
 	cwd?: string;
@@ -42,6 +43,8 @@ export interface ExtensionEvent {
 	toolName?: string;
 	args?: unknown;
 	approved?: boolean;
+	/** Generated title for `session_title`, already persisted to the session file by the extension. */
+	title?: string;
 }
 
 export interface LiveOverlay {

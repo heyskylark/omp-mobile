@@ -62,6 +62,7 @@ const ExtensionSchema = z.object({
 		"tool_execution_start",
 		"tool_approval_requested",
 		"tool_approval_resolved",
+		"session_title",
 	]),
 	sessionId: z.string().min(1),
 	sessionFile: z.string().optional(),
@@ -71,6 +72,7 @@ const ExtensionSchema = z.object({
 	toolName: z.string().optional(),
 	args: z.unknown().optional(),
 	approved: z.boolean().optional(),
+	title: z.string().optional(),
 });
 const ClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("subscribe"), sessionId: z.string().min(1) }),
