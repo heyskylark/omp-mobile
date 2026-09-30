@@ -167,6 +167,7 @@ export default function SessionScreen() {
 			<View className="gap-2 border-t border-border bg-ink px-3 pb-3 pt-2">
 				{view.pending[0] ? (
 					<InteractionPanel
+						key={view.pending[0].id}
 						interaction={view.pending[0]}
 						busy={responding}
 						respond={(response) => void respond(view.pending[0].id, response)}
