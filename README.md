@@ -65,7 +65,7 @@ When you close a terminal session, its Collab room closes. After the server sees
 
 ## Requirements
 
-- macOS with [Bun](https://bun.sh) 1.3.14 or later and OMP on your `PATH`. OMP 18.4.3 and 18.4.4 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
+- macOS with [Bun](https://bun.sh) 1.3.14 or later, Node.js for Expo prebuilds, and OMP on your `PATH`. OMP 18.4.3 and 18.4.4 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
 - Tailscale running on the computer and on the iPhone, signed in to the same tailnet with MagicDNS on.
 - For the iPhone app: iOS 16 or later on the phone, and Xcode 26.2 or later, which needs macOS Sequoia 15.6 or later. Xcode 27 builds work too. TestFlight also needs an Apple Developer Program membership and an [Expo](https://expo.dev) account for EAS builds. A free Apple Account can [install the app directly](#install-with-a-free-apple-account) for 7 days at a time.
 
