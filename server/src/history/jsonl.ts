@@ -134,7 +134,12 @@ function resultOutput(message: Record<string, unknown>): {
 	return { ...(out.text ? { output: out.text } : {}), ...(out.truncated ? { outputTruncated: true } : {}), failed };
 }
 
-export function mapEntry(entry: RawEntry, toolResults: ReadonlyMap<string, Record<string, unknown>>): TimelineItem[] {
+/** `thinkingLevel` is the reasoning level OMP recorded right after a `model_change` (its child `thinking_level_change`). */
+export function mapEntry(
+	entry: RawEntry,
+	toolResults: ReadonlyMap<string, Record<string, unknown>>,
+	thinkingLevel?: string,
+): TimelineItem[] {
 	const at = iso(entry);
 	if (entry.type === "message" && entry.message && typeof entry.message === "object") {
 		const message = entry.message as Record<string, unknown>;
@@ -229,16 +234,19 @@ export function mapEntry(entry: RawEntry, toolResults: ReadonlyMap<string, Recor
 				text: typeof entry.summary === "string" ? `Branch summary: ${entry.summary}` : "Branch changed",
 			},
 		];
-	if (entry.type === "model_change")
+	if (entry.type === "model_change") {
+		const reasoning =
+			thinkingLevel === undefined ? "" : thinkingLevel === "off" ? " · reasoning off" : ` · ${thinkingLevel} reasoning`;
 		return [
 			{
 				id: `e:${entry.id}`,
 				kind: "event",
 				at,
 				tone: "info",
-				text: `Model changed to ${String(entry.model ?? "unknown")}`,
+				text: `Model changed to ${String(entry.model ?? "unknown")}${reasoning}`,
 			},
 		];
+	}
 	if (entry.type === "reset_boundary")
 		return [{ id: `e:${entry.id}`, kind: "event", at, tone: "warning", text: "Conversation cleared" }];
 	if (entry.type === "notice")
