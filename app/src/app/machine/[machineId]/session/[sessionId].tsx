@@ -170,7 +170,10 @@ export default function SessionScreen() {
 	// The server refuses role changes for sessions it cannot drive.
 	const roleLocked = ["terminal", "conflict", "unavailable"].includes(view.session.liveness.kind);
 
-	const newestFirst = [...view.items].reverse();
+	// While a turn runs, its unfinished tool calls stay at the bottom in start order; tools that finish later
+	// (and their results) are timestamped after them and would otherwise push them up the transcript.
+	const running = working ? view.items.filter((item) => item.kind === "tool" && item.state === "running") : [];
+	const newestFirst = [...view.items.filter((item) => !running.includes(item)), ...running].reverse();
 	return (
 		<KeyboardAvoidingView
 			behavior={Platform.OS === "ios" ? "padding" : undefined}
