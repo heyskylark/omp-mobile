@@ -4,8 +4,8 @@ import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
+	BackHandler,
 	Keyboard,
-	Modal,
 	PanResponder,
 	Pressable,
 	StyleSheet,
@@ -28,6 +28,7 @@ import Animated, {
 	withTiming,
 	type SharedValue,
 } from "react-native-reanimated";
+import { useOverlay } from "./overlay";
 import { Icon } from "./ui";
 
 const ROLE_INFO: Record<ModelRole, { label: string; caption: string; icon: SFSymbol }> = {
@@ -75,32 +76,37 @@ export function ModelRoleButton({
 	onOpenChange?(open: boolean): void;
 }) {
 	const button = useRef<View>(null);
-	const [open, setOpen] = useState(false);
-	const toggle = (next: boolean) => {
-		setOpen(next);
-		onOpenChange?.(next);
+	const overlay = useOverlay();
+	const hide = useRef<(() => void) | null>(null);
+	// A button that unmounts with its slider open (e.g. navigating away) takes the slider with it.
+	useEffect(() => () => hide.current?.(), []);
+	const close = () => {
+		hide.current?.();
+		hide.current = null;
+		onOpenChange?.(false);
+	};
+	const open = () => {
+		onOpenChange?.(true);
+		hide.current = overlay.present(
+			<ModelRolePicker role={role} anchor={anchor ?? button} onChange={onChange} onClose={close} />,
+		);
 	};
 	return (
-		<>
-			<Pressable
-				ref={button}
-				accessibilityRole="button"
-				accessibilityLabel={`Model: ${modelRoleLabel(role)}`}
-				disabled={disabled}
-				hitSlop={6}
-				onPress={() => toggle(true)}
-				className="h-[34px] w-[34px] items-center justify-center rounded-full bg-surface-raised disabled:opacity-30"
-			>
-				<Icon
-					name={role ? ROLE_INFO[role].icon : "gauge.with.dots.needle.50percent"}
-					size={16}
-					color={role && role !== "default" ? ACCENT : SECONDARY}
-				/>
-			</Pressable>
-			{open ? (
-				<ModelRolePicker role={role} anchor={anchor ?? button} onChange={onChange} onClose={() => toggle(false)} />
-			) : null}
-		</>
+		<Pressable
+			ref={button}
+			accessibilityRole="button"
+			accessibilityLabel={`Model: ${modelRoleLabel(role)}`}
+			disabled={disabled}
+			hitSlop={6}
+			onPress={open}
+			className="h-[34px] w-[34px] items-center justify-center rounded-full bg-surface-raised disabled:opacity-30"
+		>
+			<Icon
+				name={role ? ROLE_INFO[role].icon : "gauge.with.dots.needle.50percent"}
+				size={16}
+				color={role && role !== "default" ? ACCENT : SECONDARY}
+			/>
+		</Pressable>
 	);
 }
 
@@ -182,8 +188,15 @@ function ModelRolePicker({
 		timers.current.push(setTimeout(dismiss, DISMISS_AFTER_PICK_MS));
 	};
 	// The responder lives for the whole overlay; handlers reach the latest render through this ref.
-	const latest = useRef({ select, pick });
-	latest.current = { select, pick };
+	const latest = useRef({ select, pick, dismiss });
+	latest.current = { select, pick, dismiss };
+	useEffect(() => {
+		const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+			latest.current.dismiss();
+			return true;
+		});
+		return () => subscription.remove();
+	}, []);
 
 	const drag = useRef({ left: 0, moved: false });
 	const indexAt = (pageX: number) => {
@@ -247,14 +260,7 @@ function ModelRolePicker({
 
 	const info = shown ? ROLE_INFO[shown] : CUSTOM;
 	return (
-		<Modal
-			transparent
-			visible
-			animationType="none"
-			statusBarTranslucent
-			navigationBarTranslucent
-			onRequestClose={dismiss}
-		>
+		<View style={StyleSheet.absoluteFill}>
 			<LayoutAnimationConfig skipEntering>
 				<AnimatedBlurView tint="dark" animatedProps={blurProps} style={StyleSheet.absoluteFill} pointerEvents="none" />
 				<Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
@@ -299,7 +305,7 @@ function ModelRolePicker({
 					</View>
 				</Animated.View>
 			</LayoutAnimationConfig>
-		</Modal>
+		</View>
 	);
 }
 
