@@ -51,6 +51,8 @@ const config: ExpoConfig = {
 			},
 		],
 		"@bacons/apple-targets",
+		["expo-build-properties", { ios: { deploymentTarget: "16.0" } }],
+		"./plugins/with-pod-deployment-target",
 	],
 };
 
