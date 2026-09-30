@@ -67,7 +67,12 @@ export default function NewSessionScreen() {
 			keyboardVerticalOffset={headerHeight}
 			className="flex-1 bg-ink"
 		>
-			<ScrollView className="flex-1" contentContainerClassName="gap-3 px-4 py-5" keyboardShouldPersistTaps="handled">
+			<ScrollView
+				className="flex-1"
+				contentContainerClassName="gap-3 px-4 py-5"
+				keyboardShouldPersistTaps="handled"
+				keyboardDismissMode="on-drag"
+			>
 				<View className="mb-1 flex-row items-center justify-between">
 					<Text className="text-[13px] font-semibold uppercase tracking-wider text-secondary">Project</Text>
 					<Pressable

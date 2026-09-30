@@ -184,6 +184,7 @@ export default function SessionScreen() {
 				keyExtractor={(item) => item.id}
 				renderItem={({ item }) => <TimelineRow item={item} />}
 				contentContainerClassName="px-4 pb-3 pt-5"
+				keyboardDismissMode="on-drag"
 				onEndReached={() => void loadOlder()}
 				onEndReachedThreshold={0.5}
 				ListFooterComponent={

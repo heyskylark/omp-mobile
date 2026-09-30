@@ -56,12 +56,19 @@ export function useImageAttachments() {
 function useKeyboardVisible() {
 	const [visible, setVisible] = useState(() => Keyboard.isVisible());
 	useEffect(() => {
-		// iOS announces the keyboard before it moves, so the composer morphs alongside it.
-		const ios = Platform.OS === "ios";
+		// iOS announces the keyboard before it moves, so the composer morphs alongside it. The "did" events also
+		// land, which settles a composer that mounted mid-animation (e.g. while the previous screen's keyboard hid).
 		const subscriptions = [
-			Keyboard.addListener(ios ? "keyboardWillShow" : "keyboardDidShow", () => setVisible(true)),
-			Keyboard.addListener(ios ? "keyboardWillHide" : "keyboardDidHide", () => setVisible(false)),
+			Keyboard.addListener("keyboardDidShow", () => setVisible(true)),
+			Keyboard.addListener("keyboardDidHide", () => setVisible(false)),
 		];
+		if (Platform.OS === "ios")
+			subscriptions.push(
+				Keyboard.addListener("keyboardWillShow", () => setVisible(true)),
+				Keyboard.addListener("keyboardWillHide", () => setVisible(false)),
+			);
+		// The keyboard may have finished moving between the first render and this subscription.
+		setVisible(Keyboard.isVisible());
 		return () => {
 			for (const subscription of subscriptions) subscription.remove();
 		};
