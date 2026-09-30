@@ -32,7 +32,14 @@ export type SessionAction =
 
 function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineItem[] {
 	const byId = new Map(current.map((item) => [item.id, item]));
-	for (const item of additions) byId.set(item.id, item);
+	for (const item of additions) {
+		const existing = byId.get(item.id);
+		// The server's history tail can report a tool call as running after its live end event already arrived
+		// (the call is saved before its result); a finished tool never runs again.
+		if (item.kind === "tool" && item.state === "running" && existing?.kind === "tool" && existing.state !== "running")
+			continue;
+		byId.set(item.id, item);
+	}
 	return [...byId.values()].sort((left, right) => left.at.localeCompare(right.at));
 }
 
