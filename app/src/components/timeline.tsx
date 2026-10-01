@@ -7,6 +7,7 @@ import { skillSegments } from "../data/skill-draft";
 import { AgentStatusIcon } from "./agent-menu";
 import { useAnchoredToggle } from "./chat-list";
 import { SkillSegmentsText } from "./skill-text";
+import { ThinkingMascot } from "./thinking-mascot";
 import { Icon } from "./ui";
 
 const NO_AGENTS: ReadonlyMap<string, AgentSummary> = new Map();
@@ -213,7 +214,11 @@ export function TimelineRow({
 	return (
 		<View className="mb-4 w-full">
 			<Blocks blocks={item.blocks} markdown />
-			{item.streaming ? <ActivityIndicator className="mt-1 self-start" size="small" color="#8B93FF" /> : null}
+			{item.streaming ? (
+				<View className="mt-2 self-center">
+					<ThinkingMascot />
+				</View>
+			) : null}
 			{item.error ? <Text className="mt-2 text-caption text-danger">{item.error}</Text> : null}
 		</View>
 	);
