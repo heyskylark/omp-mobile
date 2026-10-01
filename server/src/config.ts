@@ -2,6 +2,7 @@ import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { mkdir, readFile, realpath } from "node:fs/promises";
 import { z } from "zod";
+import { isLoopbackUrl } from "./browser/relay.ts";
 import { writePrivateJson } from "./private-json.ts";
 
 const ApnsSchema = z.object({
@@ -19,6 +20,10 @@ const ConfigSchema = z.object({
 	ompPath: z.string().min(1).optional(),
 	rpcArgs: z.array(z.string()).optional(),
 	apns: ApnsSchema.optional(),
+	browserRelayUrl: z
+		.url()
+		.default("http://127.0.0.1:9224")
+		.refine((url) => isLoopbackUrl(new URL(url)), "browserRelayUrl must be a loopback address"),
 });
 
 export type ApnsConfig = z.infer<typeof ApnsSchema>;
@@ -31,6 +36,8 @@ export interface ServerConfig {
 	ompPath: string | null;
 	rpcArgs?: string[];
 	apns?: ApnsConfig;
+	/** The OMP Browser Relay's CDP endpoint; the server connects to it only for open browser viewers. */
+	browserRelayUrl: URL;
 }
 
 // `bun run` and npm prepend node_modules/.bin directories, where a package-manager shim for omp may
@@ -80,6 +87,7 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
 		ompPath: configuredOmp,
 		...(parsed.rpcArgs ? { rpcArgs: parsed.rpcArgs } : {}),
 		...(parsed.apns ? { apns: { ...parsed.apns, keyPath: resolve(parsed.apns.keyPath) } } : {}),
+		browserRelayUrl: new URL(parsed.browserRelayUrl),
 	};
 }
 

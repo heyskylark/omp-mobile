@@ -327,6 +327,92 @@ export type ServerMessage =
 	| { type: "pong" }
 	| { type: "error"; error: ApiError };
 
+/** Whether the computer's OMP Browser Relay can be used. */
+export type BrowserAvailability =
+	| { kind: "ready" }
+	/** Nothing answers at the relay address: no agent has used the relay since login, or it was stopped. */
+	| { kind: "relay_offline" }
+	/** The relay runs, but no Chrome window with the OMP Browser Relay extension is connected to it. */
+	| { kind: "extension_disconnected" };
+
+/** Response of `GET /v1/browser`. */
+export interface BrowserStatusResponse {
+	availability: BrowserAvailability;
+}
+
+/** A Chrome tab the relay can attach to. */
+export interface BrowserTab {
+	id: string;
+	title: string;
+	url: string;
+	/** Epoch milliseconds of the tab's last creation, navigation, or title change the server saw. */
+	lastActivityAt: number;
+}
+
+export interface BrowserFrame {
+	/** Increases with every frame sent on one viewer socket; acknowledge it with `frame.ack`. */
+	seq: number;
+	/** Base64 JPEG exactly as Chrome produced it. */
+	jpeg: string;
+	/** The tab's viewport in CSS pixels. Input coordinates are in this space, not the JPEG's pixels. */
+	width: number;
+	height: number;
+	/** `live` comes from Chrome's screencast; `snapshot` is a still of a background tab, refreshed every few seconds. */
+	mode: "live" | "snapshot";
+}
+
+/** Who may send input to the watched tab, from the receiving viewer's point of view. */
+export type BrowserControl = { kind: "none" } | { kind: "you" } | { kind: "other"; deviceName: string };
+
+export const BROWSER_KEYS = [
+	"Backspace",
+	"Enter",
+	"Tab",
+	"Escape",
+	"ArrowLeft",
+	"ArrowRight",
+	"ArrowUp",
+	"ArrowDown",
+] as const;
+
+export type BrowserKey = (typeof BROWSER_KEYS)[number];
+
+/** Messages a viewer sends on `WS /v1/browser/stream`. Input always targets the watched tab. */
+export type BrowserClientMessage =
+	/** Watch a tab, leaving any previous one. `maxWidth` caps frame width in pixels. */
+	| { type: "watch"; tabId: string; maxWidth: number }
+	| { type: "unwatch" }
+	/** The frame is on screen; the server sends the newest frame next and never a superseded one. */
+	| { type: "frame.ack"; seq: number }
+	/** Bring the watched tab to the front of its Chrome window. */
+	| { type: "tab.activate" }
+	/** Take control of the watched tab from anyone else, bringing it to the front. Repeating it is harmless. */
+	| { type: "control.take" }
+	| { type: "control.release" }
+	| { type: "input.tap"; x: number; y: number }
+	| { type: "input.scroll"; x: number; y: number; dx: number; dy: number }
+	| { type: "input.text"; text: string }
+	| { type: "input.key"; key: BrowserKey }
+	| { type: "ping" };
+
+/** Messages the server sends on `WS /v1/browser/stream`. */
+export type BrowserServerMessage =
+	| { type: "state"; availability: BrowserAvailability }
+	/** Every attachable tab, most recently active first. */
+	| { type: "tabs"; tabs: BrowserTab[] }
+	| { type: "watching"; tabId: string; control: BrowserControl }
+	/**
+	 * Whether Chrome is drawing the watched tab. No Chrome on a Mac draws while its screen is locked; the last frame
+	 * stays current until Chrome draws again. Sent on watch when false, then on every change.
+	 */
+	| { type: "drawing"; drawing: boolean }
+	/** The watched tab closed. */
+	| { type: "unwatched"; tabId: string }
+	| { type: "control"; control: BrowserControl }
+	| { type: "frame"; frame: BrowserFrame }
+	| { type: "pong" }
+	| { type: "error"; error: ApiError };
+
 export type PushCategory = "OMP_APPROVAL" | "OMP_QUESTION" | "OMP_INFO";
 
 /** Plaintext sealed inside the APNs payload; decrypted by the Notification Service Extension. */

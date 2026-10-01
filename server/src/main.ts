@@ -3,6 +3,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { createBrowserService } from "./browser/index.ts";
 import { loadConfig } from "./config.ts";
 import { createHistory } from "./history/index.ts";
 import { startHttp, type HttpService } from "./http/index.ts";
@@ -45,6 +46,7 @@ async function main(): Promise<void> {
 		rpcArgs: config.rpcArgs,
 	});
 	await hub.start();
+	const browser = createBrowserService({ relayUrl: config.browserRelayUrl });
 	let http: HttpService | undefined;
 	let push: PushService | undefined;
 	const serverPath = join(config.dataDir, "server.json");
@@ -57,6 +59,7 @@ async function main(): Promise<void> {
 			devices,
 			history,
 			hub,
+			browser,
 			adminToken,
 			extensionToken,
 		});
@@ -82,6 +85,7 @@ async function main(): Promise<void> {
 		stopping = true;
 		push?.stop();
 		await http?.stop();
+		browser.stop();
 		await hub.stop();
 		await rm(serverPath, { force: true });
 		process.exit(0);

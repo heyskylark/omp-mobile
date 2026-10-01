@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { AdminStatus, ServerMessage, SessionSnapshot, SessionSummary } from "@omp-mobile/protocol";
+import type {
+	AdminStatus,
+	BrowserServerMessage,
+	ServerMessage,
+	SessionSnapshot,
+	SessionSummary,
+} from "@omp-mobile/protocol";
+import { createBrowserService } from "../browser/index.ts";
 import type { History } from "../history/api.ts";
 import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
@@ -165,12 +172,14 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 			machineName: "Mac",
 			roots: ["/tmp"],
 			ompPath: "/usr/bin/true",
+			browserRelayUrl: new URL(`http://127.0.0.1:${port + 2}`),
 		},
 		machineId: "machine",
 		ompVersion: "18.4.3",
 		devices,
 		history,
 		hub,
+		browser: createBrowserService({ relayUrl: new URL(`http://127.0.0.1:${port + 2}`) }),
 		adminToken: "admin",
 		extensionToken: "extension",
 	};
@@ -336,6 +345,23 @@ describe("HTTP API", () => {
 		await promise;
 		expect(messages[0]?.type).toBe("hello");
 		ws.close();
+	});
+
+	test("browser viewers authenticate and learn that no relay runs", async () => {
+		const { options, token } = await fixture();
+		service = await startHttp(options);
+		const base = `127.0.0.1:${options.config.port}`;
+		const status = await fetch(`http://${base}/v1/browser`, { headers: { authorization: `Bearer ${token}` } });
+		expect(await status.json()).toEqual({ availability: { kind: "relay_offline" } });
+		expect((await fetch(`http://${base}/v1/browser/stream`)).status).toBe(401);
+
+		const ws = new WebSocket(`ws://${base}/v1/browser/stream`, { headers: { Authorization: `Bearer ${token}` } });
+		const first = Promise.withResolvers<BrowserServerMessage>();
+		ws.onmessage = (event) => first.resolve(JSON.parse(String(event.data)) as BrowserServerMessage);
+		ws.onerror = () => first.reject(new Error("WebSocket failed"));
+		expect(await first.promise).toEqual({ type: "state", availability: { kind: "relay_offline" } });
+		ws.close();
+		options.browser.stop();
 	});
 
 	test("filters page 1 live sessions like history and passes the filter to history", async () => {
