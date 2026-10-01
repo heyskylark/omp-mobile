@@ -284,6 +284,15 @@ describe("OMP JSONL history", () => {
 		expect(refreshed.entries.map((entry) => entry.name)).toEqual(["alpha"]);
 		await expect(history.resolveProjectDir(join(root, "projects", "escape"))).rejects.toBeInstanceOf(ProjectPathError);
 	});
+
+	test("re-sends a tool call as finished when its result lands after the tail cursor", async () => {
+		const { history } = await fixture();
+		const tail = await history.readTail("session-1", { afterEntryId: "a1", limit: 10 });
+		expect(tail.items).toEqual([
+			expect.objectContaining({ id: "e:c1", kind: "event" }),
+			expect.objectContaining({ id: "t:call-1", kind: "tool", state: "succeeded", output: "ok" }),
+		]);
+	});
 });
 
 describe("filtered session listing", () => {
