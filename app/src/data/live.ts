@@ -29,6 +29,8 @@ function parseMessage(raw: unknown): ServerMessage | null {
 				"session.update",
 				"session.modelRole",
 				"sessions.changed",
+				"session.agents",
+				"agent.timeline",
 				"pong",
 				"error",
 			].includes(type)
@@ -51,6 +53,7 @@ class MachineSocket {
 	private listeners = new Set<Listener>();
 	private resyncListeners = new Set<ResyncListener>();
 	private subscriptions = new Map<string, number>();
+	private agentSubscriptions = new Map<string, { sessionId: string; agentId: string; count: number }>();
 	private retry = 0;
 	private retryTimer?: ReturnType<typeof setTimeout>;
 	private heartbeat?: ReturnType<typeof setInterval>;
@@ -103,6 +106,24 @@ class MachineSocket {
 		};
 	}
 
+	subscribeAgent(sessionId: string, agentId: string) {
+		const key = `${sessionId}\n${agentId}`;
+		const entry = this.agentSubscriptions.get(key);
+		if (entry) entry.count += 1;
+		else {
+			this.agentSubscriptions.set(key, { sessionId, agentId, count: 1 });
+			this.send({ type: "agent.subscribe", sessionId, agentId });
+		}
+		return () => {
+			const current = this.agentSubscriptions.get(key);
+			if (!current) return;
+			current.count -= 1;
+			if (current.count > 0) return;
+			this.agentSubscriptions.delete(key);
+			this.send({ type: "agent.unsubscribe", sessionId, agentId });
+		};
+	}
+
 	private enterBackground() {
 		this.background = true;
 		this.disconnect();
@@ -138,6 +159,8 @@ class MachineSocket {
 			this.retry = 0;
 			this.lastMessageAt = Date.now();
 			for (const sessionId of this.subscriptions.keys()) this.send({ type: "subscribe", sessionId });
+			for (const { sessionId, agentId } of this.agentSubscriptions.values())
+				this.send({ type: "agent.subscribe", sessionId, agentId });
 			this.heartbeat = setInterval(() => {
 				if (Date.now() - this.lastMessageAt < STALE_MS) this.send({ type: "ping" });
 				else this.reconnectSoon();

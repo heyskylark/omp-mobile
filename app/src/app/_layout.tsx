@@ -58,7 +58,8 @@ export default function RootLayout() {
 					<Stack.Screen name="machine/[machineId]/index" options={{ title: "Sessions" }} />
 					<Stack.Screen name="machine/[machineId]/new" options={{ title: "New session" }} />
 					<Stack.Screen name="machine/[machineId]/browse" options={{ title: "Choose folder" }} />
-					<Stack.Screen name="machine/[machineId]/session/[sessionId]" options={{ title: "Session" }} />
+					<Stack.Screen name="machine/[machineId]/session/[sessionId]/index" options={{ title: "Session" }} />
+					<Stack.Screen name="machine/[machineId]/session/[sessionId]/agent/[agentId]" options={{ title: "Agent" }} />
 					<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
 				</Stack>
 			</OverlayProvider>

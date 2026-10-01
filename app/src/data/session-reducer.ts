@@ -1,4 +1,5 @@
 import type {
+	AgentSummary,
 	ModelRole,
 	PendingInteraction,
 	ServerMessage,
@@ -15,6 +16,7 @@ export type SessionViewState =
 			kind: "ready";
 			session: SessionSummary;
 			items: TimelineItem[];
+			agents: AgentSummary[];
 			olderCursor?: string;
 			pending: PendingInteraction[];
 			modelRole: ModelRole | null;
@@ -30,7 +32,7 @@ export type SessionAction =
 	| { type: "modelRole"; modelRole: ModelRole | null }
 	| { type: "error"; message: string };
 
-function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineItem[] {
+export function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineItem[] {
 	const byId = new Map(current.map((item) => [item.id, item]));
 	for (const item of additions) {
 		const existing = byId.get(item.id);
@@ -44,8 +46,14 @@ function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineIte
 }
 
 function ready(snapshot: SessionSnapshot): SessionViewState {
-	// Servers older than the model-role endpoint omit the field.
-	return { kind: "ready", ...snapshot, modelRole: snapshot.modelRole ?? null, loadingOlder: false };
+	// Servers older than the model-role or agents fields omit them.
+	return {
+		kind: "ready",
+		...snapshot,
+		modelRole: snapshot.modelRole ?? null,
+		agents: snapshot.agents ?? [],
+		loadingOlder: false,
+	};
 }
 
 export function sessionViewReducer(state: SessionViewState, action: SessionAction): SessionViewState {
@@ -83,6 +91,8 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 					return { ...state, session: message.session, pending: message.pending };
 				case "session.modelRole":
 					return { ...state, modelRole: message.modelRole };
+				case "session.agents":
+					return { ...state, agents: message.agents };
 				default:
 					return state;
 			}
