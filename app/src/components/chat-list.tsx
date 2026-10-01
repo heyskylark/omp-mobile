@@ -1,6 +1,7 @@
 import { BlurView } from "expo-blur";
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, View, type FlatListProps } from "react-native";
+import { KeyboardChatScrollView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, type SharedValue } from "react-native-reanimated";
 import { Icon } from "./ui";
 
@@ -27,28 +28,44 @@ function windowFrame(view: View): Frame {
 	return frame;
 }
 
+/** A composer floating over the bottom of the list and riding the keyboard. */
+export type FloatingComposer = {
+	/** Height the composer covers above the bottom of the screen while the keyboard is closed. */
+	height: SharedValue<number>;
+	/** How much of the keyboard's height the composer's resting place already clears. */
+	keyboardOffset: number;
+};
+
 /**
  * An inverted chat transcript. Rows that expand in place through `useAnchoredToggle` keep their top edge
  * still, and a button returns to the newest message once the reader has scrolled away from it.
- * `bottomInset` is the height of whatever floats over the bottom of the list (the composer and the keyboard);
- * the newest message and the jump button stay above it.
+ * With a `composer`, the newest message stays above it and the keyboard: the space is a content inset, so
+ * dragging the keyboard closed moves the transcript only with the finger, never twice as fast.
  */
 export function ChatList<T>({
-	bottomInset,
+	composer,
 	...props
-}: Omit<FlatListProps<T>, "inverted" | "onScroll" | "onContentSizeChange" | "ListHeaderComponent"> & {
-	bottomInset?: SharedValue<number>;
+}: Omit<FlatListProps<T>, "inverted" | "onScroll" | "onContentSizeChange" | "renderScrollComponent"> & {
+	composer?: FloatingComposer;
 }) {
 	const list = useRef<FlatList<T>>(null);
 	const viewport = useRef<View>(null);
 	const offset = useRef(0);
 	const contentHeight = useRef(0);
+	// The newest end of an inverted list with a content inset sits at offset `-inset`, not 0.
+	const newestOffset = useRef(0);
 	const [away, setAway] = useState(false);
-	const noInset = useSharedValue(0);
-	const inset = bottomInset ?? noInset;
-	// Inverted, the list header is the newest end, so this spacer keeps the newest message clear of the overlay.
-	const spacerStyle = useAnimatedStyle(() => ({ height: inset.value }));
-	const jumpStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -inset.value }] }));
+	const keyboard = useReanimatedKeyboardAnimation();
+	const noComposer = useSharedValue(0);
+	const composerHeight = composer?.height ?? noComposer;
+	const keyboardOffset = composer?.keyboardOffset ?? 0;
+	const jumpStyle = useAnimatedStyle(() => ({
+		transform: [
+			{
+				translateY: -(composerHeight.value + (composer ? Math.max(0, -keyboard.height.value - keyboardOffset) : 0)),
+			},
+		],
+	}));
 	const anchoring = useMemo<Anchoring>(
 		() => ({
 			measure(view) {
@@ -65,7 +82,7 @@ export function ChatList<T>({
 				// Inverted: a larger offset reveals older rows and moves everything on screen down by the same amount.
 				const content = contentHeight.current + after.height - before.height;
 				const next = Math.min(
-					Math.max(offset.current + target - (after.top - port.top), 0),
+					Math.max(offset.current + target - (after.top - port.top), newestOffset.current),
 					Math.max(content - port.height, 0),
 				);
 				if (Math.abs(next - offset.current) < 0.5) return;
@@ -82,14 +99,28 @@ export function ChatList<T>({
 					{...props}
 					ref={list}
 					inverted
+					renderScrollComponent={
+						composer
+							? (scrollProps) => (
+									<KeyboardChatScrollView
+										{...scrollProps}
+										inverted
+										offset={keyboardOffset}
+										extraContentPadding={composerHeight}
+										onContentInsetChange={(insets) => {
+											newestOffset.current = -insets.top;
+										}}
+									/>
+								)
+							: undefined
+					}
 					onScroll={(event) => {
 						offset.current = event.nativeEvent.contentOffset.y;
-						setAway(offset.current > JUMP_THRESHOLD);
+						setAway(offset.current - newestOffset.current > JUMP_THRESHOLD);
 					}}
 					onContentSizeChange={(_width, height) => {
 						contentHeight.current = height;
 					}}
-					ListHeaderComponent={<Animated.View style={spacerStyle} />}
 				/>
 				{away ? (
 					<Animated.View
@@ -101,7 +132,7 @@ export function ChatList<T>({
 						<Pressable
 							accessibilityRole="button"
 							accessibilityLabel="Scroll to bottom"
-							onPress={() => list.current?.scrollToOffset({ offset: 0, animated: true })}
+							onPress={() => list.current?.scrollToOffset({ offset: newestOffset.current, animated: true })}
 							style={styles.jump}
 							className="active:opacity-80"
 						>

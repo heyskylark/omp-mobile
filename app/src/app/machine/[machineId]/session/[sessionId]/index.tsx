@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
@@ -43,9 +43,11 @@ export default function SessionScreen() {
 	const composerHeight = useSharedValue(0);
 	const [gestureOffset, setGestureOffset] = useState(0);
 	const [inputNativeID, setInputNativeID] = useState<string>();
-	const lift = useDerivedValue(() => -keyboard.height.value - keyboard.progress.value * (restingBottom - KEYBOARD_GAP));
-	const bottomInset = useDerivedValue(() => composerHeight.value + lift.value);
-	const floatingStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.value }] }));
+	// Rides exactly on the keyboard (same speed, 8 pt above it) until the keyboard drops below the resting place.
+	const keyboardOffset = restingBottom - KEYBOARD_GAP;
+	const floatingStyle = useAnimatedStyle(() => ({
+		transform: [{ translateY: -Math.max(0, -keyboard.height.value - keyboardOffset) }],
+	}));
 	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
 	const skillNames = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const agents = view.kind === "ready" ? view.agents : NO_AGENTS;
@@ -230,7 +232,7 @@ export default function SessionScreen() {
 					contentContainerClassName="px-4 pb-3 pt-3"
 					keyboardShouldPersistTaps="always"
 					keyboardDismissMode="interactive"
-					bottomInset={bottomInset}
+					composer={{ height: composerHeight, keyboardOffset }}
 					onEndReached={() => void loadOlder()}
 					onEndReachedThreshold={0.5}
 					ListFooterComponent={
