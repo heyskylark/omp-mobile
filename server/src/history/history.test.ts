@@ -295,6 +295,163 @@ describe("OMP JSONL history", () => {
 	});
 });
 
+describe("task agents", () => {
+	const jsonl = (...records: object[]) => records.map((record) => JSON.stringify(record)).join("\n") + "\n";
+	const header = (id: string, minute: number) => ({
+		type: "session",
+		version: 3,
+		id,
+		cwd: "/tmp/project",
+		timestamp: `2026-01-01T00:0${minute}:00.000Z`,
+	});
+	const user = (id: string) => ({ type: "message", id, parentId: null, message: { role: "user", content: "Do it" } });
+	const yielded = (id: string, status: string, extra: { type?: string[]; isError?: boolean } = {}) => ({
+		type: "message",
+		id,
+		parentId: null,
+		message: {
+			role: "toolResult",
+			toolCallId: `${id}-call`,
+			toolName: "yield",
+			details: { status, ...(extra.type ? { type: extra.type } : {}) },
+			content: [],
+			...(extra.isError ? { isError: true } : {}),
+		},
+	});
+	const assistant = (id: string, stopReason: string) => ({
+		type: "message",
+		id,
+		parentId: null,
+		message: { role: "assistant", stopReason, content: [{ type: "text", text: "..." }] },
+	});
+
+	async function agentFixture() {
+		const { root, history } = await fixture();
+		const parent = join(root, "sessions", "bucket", "parent.jsonl");
+		const dir = parent.slice(0, -".jsonl".length);
+		await mkdir(join(dir, "Alpha"), { recursive: true });
+		await writeFile(
+			parent,
+			jsonl(
+				header("parent", 0),
+				{
+					type: "message",
+					id: "spawn",
+					parentId: null,
+					message: {
+						role: "assistant",
+						stopReason: "toolUse",
+						content: [{ type: "toolCall", id: "task-1", name: "task", arguments: { i: "Spawn" } }],
+					},
+				},
+				{
+					type: "message",
+					id: "spawned",
+					parentId: "spawn",
+					message: {
+						role: "toolResult",
+						toolCallId: "task-1",
+						toolName: "task",
+						content: [{ type: "text", text: "Spawned" }],
+						details: { async: { state: "running" }, progress: [{ id: "Alpha" }, { id: "Beta" }] },
+					},
+				},
+				{
+					type: "custom_message",
+					customType: "async-result",
+					id: "delivered",
+					parentId: "spawned",
+					content: "<system-notice>Background job Alpha has completed…</system-notice>",
+					details: { jobs: [{ jobId: "Alpha", type: "task", label: "Alpha", durationMs: 1000 }] },
+				},
+			),
+		);
+		await writeFile(
+			join(dir, "Alpha.jsonl"),
+			jsonl(header("alpha", 1), user("a1"), yielded("a2", "success"), {
+				type: "custom",
+				customType: "session_exit",
+				id: "a3",
+				parentId: "a2",
+			}),
+		);
+		await writeFile(join(dir, "Beta.jsonl"), jsonl(header("beta", 2), user("b1"), assistant("b2", "toolUse")));
+		await writeFile(
+			join(dir, "Woken.jsonl"),
+			jsonl(header("woken", 3), user("w1"), yielded("w2", "success"), user("w3")),
+		);
+		await writeFile(
+			join(dir, "Alpha", "Alpha.Gamma.jsonl"),
+			jsonl(header("gamma", 4), user("g1"), assistant("g2", "aborted")),
+		);
+		await writeFile(
+			join(dir, "Partial.jsonl"),
+			jsonl(
+				header("partial", 5),
+				user("p1"),
+				yielded("p2", "success", { type: ["findings"] }),
+				yielded("p3", "error", { isError: true }),
+			),
+		);
+		await writeFile(
+			join(dir, "Superseded.jsonl"),
+			jsonl(header("superseded", 6), user("s1"), yielded("s2", "success"), {
+				type: "custom_message",
+				customType: "async-result",
+				id: "s3",
+				parentId: "s2",
+				content: "job done",
+			}),
+		);
+		await writeFile(join(dir, "__advisor.jsonl"), jsonl(header("advisor", 7)));
+		await writeFile(join(dir, "__advisor.review.jsonl"), jsonl(header("named-advisor", 7)));
+		await writeFile(join(dir, "Alpha", "__advisor.jsonl"), jsonl(header("alpha-advisor", 7)));
+		await writeFile(join(dir, ".Alpha.jsonl.lock.os"), "");
+		await writeFile(join(dir, "Alpha.md"), "Alpha's output");
+		return { history, parent, dir };
+	}
+
+	test("finds agents nested under their session with how each one's latest run ended", async () => {
+		const { history, parent } = await agentFixture();
+		expect(
+			(await history.listAgents(parent)).map(({ agentId, parentId, outcome }) => ({ agentId, parentId, outcome })),
+		).toEqual([
+			{ agentId: "Alpha", parentId: undefined, outcome: "completed" },
+			{ agentId: "Beta", parentId: undefined, outcome: undefined },
+			{ agentId: "Woken", parentId: undefined, outcome: undefined },
+			{ agentId: "Alpha.Gamma", parentId: "Alpha", outcome: "aborted" },
+			{ agentId: "Partial", parentId: undefined, outcome: undefined },
+			{ agentId: "Superseded", parentId: undefined, outcome: undefined },
+		]);
+		expect((await history.listSessions({ limit: 10 })).items.map((session) => session.id).sort()).toEqual([
+			"parent",
+			"session-1",
+		]);
+	});
+
+	test("tells an agent's transcript from a session's", async () => {
+		const { history, parent, dir } = await agentFixture();
+		expect(await history.locateAgent(parent)).toBeNull();
+		expect(await history.locateAgent(join(dir, "Beta.jsonl"))).toEqual({ rootFile: parent, agentId: "Beta" });
+		expect(await history.locateAgent(join(dir, "Alpha", "Alpha.Gamma.jsonl"))).toEqual({
+			rootFile: parent,
+			agentId: "Alpha.Gamma",
+			parentId: "Alpha",
+		});
+	});
+
+	test("links a task call to the agents it spawned and shows a delivered result as who finished", async () => {
+		const { history } = await agentFixture();
+		const page = await history.readTimeline("parent", { limit: 10 });
+		expect(page.items.find((item) => item.id === "t:task-1")).toEqual(
+			expect.objectContaining({ state: "succeeded", agentIds: ["Alpha", "Beta"] }),
+		);
+		expect(page.items.find((item) => item.id === "e:delivered")).toEqual(
+			expect.objectContaining({ kind: "event", text: "Alpha finished", agentIds: ["Alpha"] }),
+		);
+	});
+});
+
 describe("filtered session listing", () => {
 	const sessions = [
 		{ id: "login", project: "alpha", title: "Fix login redirect bug", minutesAgo: 1 },

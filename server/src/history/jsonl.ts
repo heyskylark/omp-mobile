@@ -134,6 +134,19 @@ function resultOutput(message: Record<string, unknown>): {
 	return { ...(out.text ? { output: out.text } : {}), ...(out.truncated ? { outputTruncated: true } : {}), failed };
 }
 
+/** Agent ids a `task` call spawned, from its (partial) result's `details.progress`; nested ids are already dotted. */
+export function taskAgentIds(result: unknown): string[] {
+	if (!result || typeof result !== "object" || !("details" in result)) return [];
+	const details = result.details;
+	if (!details || typeof details !== "object" || !("progress" in details) || !Array.isArray(details.progress))
+		return [];
+	return details.progress.flatMap((progress: unknown) =>
+		progress && typeof progress === "object" && "id" in progress && typeof progress.id === "string"
+			? [progress.id]
+			: [],
+	);
+}
+
 /** `thinkingLevel` is the reasoning level OMP recorded right after a `model_change` (its child `thinking_level_change`). */
 export function mapEntry(
 	entry: RawEntry,
@@ -167,6 +180,7 @@ export function mapEntry(
 				if (call.type !== "toolCall" || typeof call.id !== "string") continue;
 				const result = toolResults.get(call.id);
 				const output = result ? resultOutput(result) : undefined;
+				const agentIds = call.name === "task" ? taskAgentIds(result) : [];
 				items.push({
 					id: `t:${call.id}`,
 					kind: "tool",
@@ -177,6 +191,7 @@ export function mapEntry(
 					state: output ? (output.failed ? "failed" : "succeeded") : "running",
 					...(output?.output ? { output: output.output } : {}),
 					...(output?.outputTruncated ? { outputTruncated: true } : {}),
+					...(agentIds.length ? { agentIds } : {}),
 				});
 			}
 			return items;
@@ -205,6 +220,32 @@ export function mapEntry(
 			const details = (entry.details ?? {}) as Record<string, unknown>;
 			if (typeof details.prompt === "string")
 				return [{ id: `e:${entry.id}`, kind: "user", at, blocks: [{ kind: "text", text: details.prompt }] }];
+		}
+		// OMP hands a finished background agent's whole result to the model; the thread shows only who finished.
+		if (entry.customType === "async-result") {
+			const details = entry.details;
+			const jobs = details && typeof details === "object" && "jobs" in details ? details.jobs : undefined;
+			const agentIds = (Array.isArray(jobs) ? jobs : []).flatMap((job: unknown) =>
+				job &&
+				typeof job === "object" &&
+				"type" in job &&
+				job.type === "task" &&
+				"jobId" in job &&
+				typeof job.jobId === "string"
+					? [job.jobId]
+					: [],
+			);
+			if (agentIds.length)
+				return [
+					{
+						id: `e:${entry.id}`,
+						kind: "event",
+						at,
+						tone: "info",
+						text: `${agentIds.map((id) => id.slice(id.lastIndexOf(".") + 1)).join(", ")} finished`,
+						agentIds,
+					},
+				];
 		}
 		if (entry.display === false) return [];
 		return [

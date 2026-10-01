@@ -6,6 +6,7 @@ import type {
 	TimelineItem,
 	TimelinePage,
 } from "@omp-mobile/protocol";
+import type { AgentFile, AgentLocation } from "./agents";
 
 /** Everything the server knows about a session from its JSONL file alone. */
 export interface SessionMeta {
@@ -46,6 +47,14 @@ export interface History {
 	readTail(id: string, opts: { afterEntryId?: string; limit: number }): Promise<DurableTail>;
 	/** Active model role on the session's current branch; null when it runs a model picked outside those roles. */
 	readModelRole(id: string): Promise<ModelRole | null>;
+	/** Null unless `file` is a task agent's transcript, per OMP's layout. */
+	locateAgent(file: string): Promise<AgentLocation | null>;
+	getSessionByFile(file: string): Promise<SessionMeta | null>;
+	/** Task agents of the session stored at `rootFile`, nested ones included, oldest first. */
+	listAgents(rootFile: string): Promise<AgentFile[]>;
+	/** Like `readTimeline`, for an agent's thread; its cursors are valid only for that agent. */
+	readAgentTimeline(agent: AgentFile, opts: { before?: string; limit: number }): Promise<TimelinePage>;
+	readAgentTail(agent: AgentFile, opts: { afterEntryId?: string; limit: number }): Promise<DurableTail>;
 	recentProjects(limit: number): Promise<RecentProject[]>;
 	listDirectories(path: string | undefined): Promise<DirectoryListing>;
 	/** Resolve and validate a cwd for a new session: must be an existing directory inside the allowed roots. */

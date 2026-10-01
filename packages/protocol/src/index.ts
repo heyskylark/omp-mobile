@@ -58,6 +58,24 @@ export type Block =
 
 export type ToolState = "running" | "succeeded" | "failed";
 
+export type AgentStatus = "running" | "completed" | "failed" | "aborted" | "interrupted";
+
+/** An OMP `task` subagent of a session. Its work lives in its own thread, never in the session's timeline. */
+export interface AgentSummary {
+	/** OMP agent id, unique within the session; nested agents are dotted ("Alpha.Gamma"). */
+	id: string;
+	/** Id of the agent that spawned this one; absent when the session itself spawned it. */
+	parentId?: string;
+	/** "interrupted": unfinished, and no running OMP process vouches for it. */
+	status: AgentStatus;
+	/** OMP's one-line summary of the assignment, once it has one. */
+	description?: string;
+	/** Latest intent or tool while running. */
+	activity?: string;
+	startedAt: ISODate;
+	updatedAt: ISODate;
+}
+
 export type TimelineItem =
 	| { id: string; kind: "user"; at: ISODate; blocks: Block[] }
 	| {
@@ -80,8 +98,18 @@ export type TimelineItem =
 			state: ToolState;
 			output?: string;
 			outputTruncated?: boolean;
+			/** Agents this `task` call spawned; the call is still working while any of them runs. */
+			agentIds?: string[];
 	  }
-	| { id: string; kind: "event"; at: ISODate; tone: "info" | "warning" | "error"; text: string }
+	| {
+			id: string;
+			kind: "event";
+			at: ISODate;
+			tone: "info" | "warning" | "error";
+			text: string;
+			/** Agents whose finished work this event delivered to the thread. */
+			agentIds?: string[];
+	  }
 	| { id: string; kind: "unsupported"; at: ISODate; label: string };
 
 export interface TimelinePage {
@@ -131,6 +159,15 @@ export interface SessionSnapshot {
 	pending: PendingInteraction[];
 	/** Active OMP model role; null when the session runs a model chosen outside these roles. */
 	modelRole: ModelRole | null;
+	/** Every agent of the session, nested ones included. */
+	agents: AgentSummary[];
+}
+
+/** Response of `GET /v1/sessions/:id/agents/:agentId`: one agent's read-only thread plus the session's agents. */
+export interface AgentThreadSnapshot {
+	agents: AgentSummary[];
+	items: TimelineItem[];
+	olderCursor?: string;
 }
 
 export interface RecentProject extends Project {
@@ -236,6 +273,8 @@ export interface ApiError {
 export type ClientMessage =
 	| { type: "subscribe"; sessionId: string }
 	| { type: "unsubscribe"; sessionId: string }
+	| { type: "agent.subscribe"; sessionId: string; agentId: string }
+	| { type: "agent.unsubscribe"; sessionId: string; agentId: string }
 	| { type: "ping" };
 
 export type ServerMessage =
@@ -245,6 +284,10 @@ export type ServerMessage =
 	| { type: "timeline.retire"; sessionId: string; ids: string[] }
 	| { type: "session.update"; sessionId: string; session: SessionSummary; pending: PendingInteraction[] }
 	| { type: "session.modelRole"; sessionId: string; modelRole: ModelRole | null }
+	/** Replaces the session's agents; sent to session subscribers. */
+	| { type: "session.agents"; sessionId: string; agents: AgentSummary[] }
+	/** Upserts items of one agent's thread; sent only to that agent's subscribers. */
+	| { type: "agent.timeline"; sessionId: string; agentId: string; items: TimelineItem[] }
 	| { type: "sessions.changed" }
 	| { type: "pong" }
 	| { type: "error"; error: ApiError };

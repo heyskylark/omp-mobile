@@ -12,6 +12,8 @@ import type {
 	TimelineItem,
 } from "@omp-mobile/protocol";
 import type { History, SessionMeta } from "../history/api.ts";
+import { taskAgentIds } from "../history/jsonl.ts";
+import { AgentRoster } from "./agents.ts";
 import type { ExtensionEvent, LiveNotification, LiveOptions } from "./api.ts";
 import { CollabGuest, findCollabLink } from "./collab.ts";
 import {
@@ -90,6 +92,8 @@ function outputText(value: unknown): string {
 }
 
 export class SessionActor {
+	/** The session's task agents; they run inside its OMP process, which stays up until they stop. */
+	readonly agents: AgentRoster;
 	sessionId: string;
 	meta: SessionMeta;
 	state: OwnershipState = { kind: "idle" };
@@ -175,6 +179,12 @@ export class SessionActor {
 		this.meta = meta;
 		this.#opts = opts;
 		this.#hooks = hooks;
+		this.agents = new AgentRoster({
+			history: opts.history,
+			session: () => ({ id: this.sessionId, file: this.meta.file }),
+			publish: (agents) => this.#emit({ type: "session.agents", sessionId: this.sessionId, agents }),
+			settled: () => this.#scheduleClose(),
+		});
 	}
 	get pending(): PendingInteraction[] {
 		return [...this.#pending.values()].map((record) => record.pending);
@@ -188,7 +198,7 @@ export class SessionActor {
 
 	async snapshot(limit: number): Promise<SessionSnapshot> {
 		const modelRole = this.#modelRole ?? (await this.#opts.history.readModelRole(this.sessionId));
-		if (!this.meta.file) return { session: this.summary(), items: [], pending: this.pending, modelRole };
+		if (!this.meta.file) return { session: this.summary(), items: [], pending: this.pending, modelRole, agents: [] };
 		const page = await this.#opts.history.readTimeline(this.sessionId, { limit });
 		const durableIds = new Set(page.items.map((item) => item.id));
 		return {
@@ -197,6 +207,7 @@ export class SessionActor {
 			olderCursor: page.olderCursor,
 			pending: this.pending,
 			modelRole,
+			agents: await this.agents.list(),
 		};
 	}
 
@@ -354,6 +365,7 @@ export class SessionActor {
 	async stop(): Promise<void> {
 		if (this.#pollTimer) clearInterval(this.#pollTimer);
 		if (this.#closeTimer) clearTimeout(this.#closeTimer);
+		this.agents.stop();
 		this.#leaveCollab();
 		if (this.#rpc) await this.#closeRpc();
 	}
@@ -530,6 +542,7 @@ export class SessionActor {
 		const title = (typeof frame.intent === "string" && frame.intent) || argsIntent || previous?.title || frame.toolName;
 		const input = frame.args === undefined ? (previous?.input ?? "") : outputText(frame.args);
 		const result = frame.result ?? frame.partialResult;
+		const agentIds = frame.toolName === "task" ? taskAgentIds(result) : [];
 		const item: TimelineItem = {
 			id: `t:${frame.toolCallId}`,
 			kind: "tool",
@@ -539,6 +552,7 @@ export class SessionActor {
 			input,
 			state,
 			...(result === undefined ? {} : { output: outputText(result) }),
+			...(agentIds.length ? { agentIds } : {}),
 		};
 		this.#live.set(item.id, item);
 		this.#emit({ type: "timeline.upsert", sessionId: this.sessionId, items: [item] });
@@ -706,16 +720,22 @@ export class SessionActor {
 		if (this.state.kind === "unavailable") throw new Error(this.state.reason);
 		if (this.state.kind === "terminal" && this.state.shutdownSeen) throw new Error("Terminal session is shutting down");
 	}
+	#idle(): boolean {
+		return (
+			!this.#subscribers.size &&
+			!this.#rpcBusy &&
+			!(this.state.kind === "server" && (this.state.phase === "working" || this.state.phase === "settling")) &&
+			!this.agents.running
+		);
+	}
 	#scheduleClose(): void {
-		if (
-			!this.#rpc ||
-			this.#subscribers.size ||
-			this.#rpcBusy ||
-			(this.state.kind === "server" && (this.state.phase === "working" || this.state.phase === "settling"))
-		)
-			return;
-		if (this.#closeTimer) clearTimeout(this.#closeTimer);
-		this.#closeTimer = setTimeout(() => void this.#closeRpc(), this.#opts.settleGraceMs ?? 30_000);
+		if (!this.#rpc || !this.#idle()) return;
+		clearTimeout(this.#closeTimer);
+		this.#closeTimer = setTimeout(() => {
+			this.#closeTimer = undefined;
+			// Work may have started during the grace period, e.g. an agent whose first report came after the turn ended.
+			if (this.#idle()) void this.#closeRpc();
+		}, this.#opts.settleGraceMs ?? 30_000);
 	}
 	async #closeRpc(): Promise<void> {
 		const rpc = this.#rpc;

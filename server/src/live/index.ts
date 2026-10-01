@@ -1,14 +1,17 @@
 import type {
+	AgentThreadSnapshot,
 	CreateSessionRequest,
 	ModelRole,
 	PromptRequest,
 	RespondRequest,
 	ServerMessage,
 	SessionSnapshot,
+	TimelinePage,
 } from "@omp-mobile/protocol";
 import type { SessionMeta } from "../history/api.ts";
+import type { AgentSignal } from "./agents.ts";
 import { SessionActor } from "./actor.ts";
-import type { CreateLiveHub, ExtensionEvent, LiveHub, LiveNotification, LiveOptions } from "./api.ts";
+import type { AgentReport, CreateLiveHub, ExtensionEvent, LiveHub, LiveNotification, LiveOptions } from "./api.ts";
 import { startLocalRelay, type LocalRelay } from "./relay.ts";
 import { SkillCatalog } from "./skills.ts";
 
@@ -21,6 +24,8 @@ class Hub implements LiveHub {
 	#problems: string[] = [];
 	#creating = new Map<string, Promise<SessionActor | null>>();
 	#provisional = new Set<string>();
+	/** Extension posts are handled one at a time, in arrival order, so a session's events never overtake each other. */
+	#ingesting = Promise.resolve();
 	#skills: SkillCatalog;
 
 	constructor(opts: LiveOptions) {
@@ -52,7 +57,7 @@ class Hub implements LiveHub {
 		const actor = await this.#actor(sessionId);
 		if (actor) {
 			if (this.#provisional.has(sessionId))
-				return { session: actor.summary(), items: [], pending: actor.pending, modelRole: "default" };
+				return { session: actor.summary(), items: [], pending: actor.pending, modelRole: "default", agents: [] };
 			return actor.snapshot(limit);
 		}
 		const meta = await this.#opts.history.getSession(sessionId);
@@ -64,6 +69,7 @@ class Hub implements LiveHub {
 			olderCursor: page.olderCursor,
 			pending: [],
 			modelRole: await this.#opts.history.readModelRole(sessionId),
+			agents: [],
 		};
 	}
 
@@ -126,40 +132,89 @@ class Hub implements LiveHub {
 		return await (await this.#required(sessionId)).respond(interactionId, req);
 	}
 	ingest(event: ExtensionEvent): void {
-		void this.#actor(event.sessionId).then((actor) => {
-			if (actor) {
-				actor.ingest(event);
-				if (this.#provisional.has(event.sessionId))
-					void this.#opts.history.getSession(event.sessionId).then((meta) => {
-						if (meta) this.#provisional.delete(event.sessionId);
-					});
-				return;
-			}
-			if (event.event !== "session_start" || !event.cwd) return;
-			const existing = this.#actors.get(event.sessionId);
-			if (existing) {
-				existing.ingest(event);
-				return;
-			}
-			const now = new Date().toISOString();
-			const created = new SessionActor(
-				{
-					id: event.sessionId,
-					file: event.sessionFile ?? "",
-					cwd: event.cwd,
-					title: "New session",
-					createdAt: now,
-					updatedAt: now,
-					status: "pending",
-				},
-				this.#opts,
-				this.#hooks(),
-			);
-			this.#actors.set(event.sessionId, created);
-			this.#provisional.add(event.sessionId);
-			created.ingest(event);
-			this.#broadcast();
+		this.#enqueue(() => this.#ingest(event));
+	}
+	ingestAgents(report: AgentReport): void {
+		this.#enqueue(() => this.#ingestAgents(report));
+	}
+	async agentSnapshot(sessionId: string, agentId: string, limit: number): Promise<AgentThreadSnapshot | null> {
+		return (await this.#actor(sessionId))?.agents.thread(agentId, limit) ?? null;
+	}
+	async agentTimeline(
+		sessionId: string,
+		agentId: string,
+		before: string | undefined,
+		limit: number,
+	): Promise<TimelinePage | null> {
+		return (await this.#actor(sessionId))?.agents.older(agentId, before, limit) ?? null;
+	}
+	subscribeAgent(sessionId: string, agentId: string, send: (message: ServerMessage) => void): () => void {
+		let active = true;
+		let unsubscribe: (() => void) | undefined;
+		void this.#actor(sessionId).then((actor) => {
+			if (actor && active) unsubscribe = actor.agents.watch(agentId, send);
 		});
+		return () => {
+			active = false;
+			unsubscribe?.();
+		};
+	}
+	#enqueue(handle: () => Promise<void>): void {
+		this.#ingesting = this.#ingesting
+			.then(handle)
+			.catch((error) => console.error("Could not handle an OMP extension event", error));
+	}
+	async #ingest(event: ExtensionEvent): Promise<void> {
+		// A task agent's own OMP session reports like any other; it is never a session of its own.
+		if (event.sessionFile && (await this.#opts.history.locateAgent(event.sessionFile))) return;
+		const actor = await this.#actor(event.sessionId);
+		if (actor) {
+			actor.ingest(event);
+			if (this.#provisional.has(event.sessionId))
+				void this.#opts.history.getSession(event.sessionId).then((meta) => {
+					if (meta) this.#provisional.delete(event.sessionId);
+				});
+			return;
+		}
+		if (event.event !== "session_start" || !event.cwd) return;
+		const existing = this.#actors.get(event.sessionId);
+		if (existing) {
+			existing.ingest(event);
+			return;
+		}
+		const now = new Date().toISOString();
+		const created = new SessionActor(
+			{
+				id: event.sessionId,
+				file: event.sessionFile ?? "",
+				cwd: event.cwd,
+				title: "New session",
+				createdAt: now,
+				updatedAt: now,
+				status: "pending",
+			},
+			this.#opts,
+			this.#hooks(),
+		);
+		this.#actors.set(event.sessionId, created);
+		this.#provisional.add(event.sessionId);
+		created.ingest(event);
+		this.#broadcast();
+	}
+	async #ingestAgents({ pid, agents }: AgentReport): Promise<void> {
+		const byRoot = new Map<string, AgentSignal[]>();
+		for (const agent of agents) {
+			const location = await this.#opts.history.locateAgent(agent.sessionFile);
+			if (location?.agentId !== agent.id) continue;
+			byRoot.set(location.rootFile, [...(byRoot.get(location.rootFile) ?? []), agent]);
+		}
+		for (const [rootFile, signals] of byRoot) {
+			const meta =
+				[...this.#actors.values()].find((actor) => actor.meta.file === rootFile)?.meta ??
+				(await this.#opts.history.getSessionByFile(rootFile));
+			const actor = meta?.id ? await this.#actor(meta.id) : null;
+			await actor?.agents.ingest(signals, pid);
+		}
 	}
 	onNotify(listener: (notification: LiveNotification) => void): () => void {
 		this.#notifications.add(listener);

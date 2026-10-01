@@ -10,7 +10,7 @@ interface CacheEntry {
 	meta?: SessionMeta;
 }
 
-async function readSlices(file: string, size: number) {
+export async function readSlices(file: string, size: number) {
 	const handle = await open(file, "r");
 	try {
 		const prefixLength = Math.min(4096, size);

@@ -1,4 +1,5 @@
 import type {
+	AgentThreadSnapshot,
 	CreateSessionRequest,
 	Liveness,
 	ModelRole,
@@ -11,8 +12,10 @@ import type {
 	SessionSnapshot,
 	SessionSummary,
 	SkillCommand,
+	TimelinePage,
 } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
+import type { AgentSignal } from "./agents.ts";
 
 /** Something the push layer should tell paired phones about. */
 export interface LiveNotification {
@@ -49,6 +52,13 @@ export interface ExtensionEvent {
 	title?: string;
 }
 
+/** Task agent reports the extension batches from OMP's `task:subagent:*` event channels. */
+export interface AgentReport {
+	/** OMP process the agents run in. */
+	pid: number;
+	agents: AgentSignal[];
+}
+
 export interface LiveOverlay {
 	liveness: Liveness;
 	pendingCount: number;
@@ -82,6 +92,19 @@ export interface LiveHub {
 	handoff(sessionId: string): Promise<void>;
 	respond(sessionId: string, interactionId: string, req: RespondRequest): Promise<ResponseReceipt>;
 	ingest(event: ExtensionEvent): void;
+	/** Agents are routed to their root session by their transcript's location; others are dropped. */
+	ingestAgents(report: AgentReport): void;
+	/** Null when the session or agent is unknown. */
+	agentSnapshot(sessionId: string, agentId: string, limit: number): Promise<AgentThreadSnapshot | null>;
+	/** Newest page when `before` is absent. */
+	agentTimeline(
+		sessionId: string,
+		agentId: string,
+		before: string | undefined,
+		limit: number,
+	): Promise<TimelinePage | null>;
+	/** Read-only steps of one agent's thread; returns unsubscribe. Never keeps OMP running. */
+	subscribeAgent(sessionId: string, agentId: string, send: (msg: ServerMessage) => void): () => void;
 	onNotify(listener: (n: LiveNotification) => void): () => void;
 	/** The `/skill:<name>` commands OMP offers in `cwd`, an already validated project directory. */
 	skills(cwd: string): Promise<SkillCommand[]>;
