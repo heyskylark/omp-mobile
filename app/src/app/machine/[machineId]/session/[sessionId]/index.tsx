@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
-import { Alert, KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
-import { useHeaderHeight } from "@react-navigation/elements";
 import * as Haptics from "expo-haptics";
+import { KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle, useDerivedValue, useSharedValue } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
 import { ChatList } from "../../../../../components/chat-list";
-import { Composer, useImageAttachments } from "../../../../../components/composer";
+import { Composer, useComposerDraft } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../../components/session-meta";
 import { TimelineRow } from "../../../../../components/timeline";
@@ -20,20 +22,30 @@ import { sessionViewReducer, type SessionViewState } from "../../../../../data/s
 import { useSkills } from "../../../../../data/skills";
 
 const NO_AGENTS: AgentSummary[] = [];
+/** Space between the floating composer and the top of the keyboard. */
+const KEYBOARD_GAP = 8;
 
 export default function SessionScreen() {
 	const { machineId, sessionId } = useLocalSearchParams<{ machineId: string; sessionId: string }>();
 	const machine = useMachine(machineId);
 	const navigation = useNavigation();
-	const headerHeight = useHeaderHeight();
+	const insets = useSafeAreaInsets();
 	const { show } = useToast();
 	const api = useMemo(() => (machine ? new OmpApi(machine) : null), [machine]);
 	const [view, dispatch] = useReducer(sessionViewReducer, { kind: "loading" } satisfies SessionViewState);
-	const [prompt, setPrompt] = useState("");
+	const draft = useComposerDraft(`${machineId}/${sessionId}`);
 	const [sending, setSending] = useState(false);
 	const [responding, setResponding] = useState(false);
 	const [changingRole, setChangingRole] = useState(false);
-	const attachments = useImageAttachments();
+	// The composer floats over the transcript and rides the keyboard, following it during an interactive dismiss.
+	const keyboard = useReanimatedKeyboardAnimation();
+	const restingBottom = Math.max(insets.bottom, KEYBOARD_GAP);
+	const composerHeight = useSharedValue(0);
+	const [gestureOffset, setGestureOffset] = useState(0);
+	const [inputNativeID, setInputNativeID] = useState<string>();
+	const lift = useDerivedValue(() => -keyboard.height.value - keyboard.progress.value * (restingBottom - KEYBOARD_GAP));
+	const bottomInset = useDerivedValue(() => composerHeight.value + lift.value);
+	const floatingStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.value }] }));
 	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
 	const skillNames = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const agents = view.kind === "ready" ? view.agents : NO_AGENTS;
@@ -140,11 +152,11 @@ export default function SessionScreen() {
 		view.session.liveness.kind === "server" &&
 		["starting", "working", "settling"].includes(view.session.liveness.phase);
 	const send = async () => {
-		const text = prompt.trim();
-		const images = attachments.images;
+		const text = draft.text.trim();
+		const images = draft.images;
 		if ((!text && !images.length) || sending) return;
-		setPrompt("");
-		attachments.setImages([]);
+		draft.setText("");
+		draft.setImages([]);
 		setSending(true);
 		await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 		try {
@@ -154,8 +166,8 @@ export default function SessionScreen() {
 				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
 			});
 		} catch (error) {
-			setPrompt(text);
-			attachments.setImages(images);
+			draft.setText(text);
+			draft.setImages(images);
 			show(error instanceof Error ? error.message : "Message not sent", "error");
 		} finally {
 			setSending(false);
@@ -200,29 +212,43 @@ export default function SessionScreen() {
 	const running = working ? view.items.filter((item) => item.kind === "tool" && item.state === "running") : [];
 	const newestFirst = [...view.items.filter((item) => !running.includes(item)), ...running].reverse();
 	return (
-		<KeyboardAvoidingView
-			behavior={Platform.OS === "ios" ? "padding" : undefined}
-			keyboardVerticalOffset={headerHeight}
-			className="flex-1 bg-ink"
-		>
-			<ChatList
-				data={newestFirst}
-				extraData={[skillNames, agentsById]}
-				keyExtractor={(item) => item.id}
-				renderItem={({ item }) => (
-					<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
-				)}
-				contentContainerClassName="px-4 pb-3 pt-5"
-				keyboardDismissMode="on-drag"
-				onEndReached={() => void loadOlder()}
-				onEndReachedThreshold={0.5}
-				ListFooterComponent={
-					view.loadingOlder ? (
-						<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
-					) : null
-				}
-			/>
-			<View className="gap-2 border-t border-border bg-ink px-3 pb-3 pt-2">
+		<View className="flex-1 bg-ink">
+			{/* Swiping down through the composer drags the keyboard closed; the offset starts that at the composer's top. */}
+			<KeyboardGestureArea
+				interpolator="ios"
+				offset={gestureOffset}
+				textInputNativeID={inputNativeID}
+				style={styles.fill}
+			>
+				<ChatList
+					data={newestFirst}
+					extraData={[skillNames, agentsById]}
+					keyExtractor={(item) => item.id}
+					renderItem={({ item }) => (
+						<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
+					)}
+					contentContainerClassName="px-4 pb-3 pt-3"
+					keyboardShouldPersistTaps="always"
+					keyboardDismissMode="interactive"
+					bottomInset={bottomInset}
+					onEndReached={() => void loadOlder()}
+					onEndReachedThreshold={0.5}
+					ListFooterComponent={
+						view.loadingOlder ? (
+							<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
+						) : null
+					}
+				/>
+			</KeyboardGestureArea>
+			<Animated.View
+				pointerEvents="box-none"
+				onLayout={(event) => {
+					const { height } = event.nativeEvent.layout;
+					composerHeight.value = height;
+					setGestureOffset(Math.round(height - restingBottom + KEYBOARD_GAP));
+				}}
+				style={[styles.floating, { paddingBottom: restingBottom }, floatingStyle]}
+			>
 				{view.pending[0] ? (
 					<InteractionPanel
 						key={view.pending[0].id}
@@ -233,22 +259,28 @@ export default function SessionScreen() {
 				) : null}
 				<Composer
 					machineId={machineId}
-					value={prompt}
-					onChangeText={setPrompt}
+					value={draft.text}
+					onChangeText={draft.setText}
 					onSend={() => void send()}
 					working={working}
 					onStop={stop}
 					disabled={sending}
-					images={attachments.images}
-					onAttach={attachments.attach}
-					onPasteImages={attachments.paste}
-					onRemoveImage={attachments.remove}
+					images={draft.images}
+					onAttach={draft.attach}
+					onPasteImages={draft.paste}
+					onRemoveImage={draft.remove}
 					modelRole={view.modelRole}
 					onModelRoleChange={(role) => void changeModelRole(role)}
 					modelRoleDisabled={changingRole || roleLocked}
 					skills={skills}
+					onInputNativeIDChange={setInputNativeID}
 				/>
-			</View>
-		</KeyboardAvoidingView>
+			</Animated.View>
+		</View>
 	);
 }
+
+const styles = StyleSheet.create({
+	fill: { flex: 1 },
+	floating: { position: "absolute", left: 0, right: 0, bottom: 0, gap: 8, paddingHorizontal: 12 },
+});

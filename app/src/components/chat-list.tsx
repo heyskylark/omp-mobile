@@ -1,7 +1,7 @@
 import { BlurView } from "expo-blur";
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, View, type FlatListProps } from "react-native";
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, type SharedValue } from "react-native-reanimated";
 import { Icon } from "./ui";
 
 /** Distance from the newest message, in points, past which the jump-to-bottom button shows. */
@@ -30,13 +30,25 @@ function windowFrame(view: View): Frame {
 /**
  * An inverted chat transcript. Rows that expand in place through `useAnchoredToggle` keep their top edge
  * still, and a button returns to the newest message once the reader has scrolled away from it.
+ * `bottomInset` is the height of whatever floats over the bottom of the list (the composer and the keyboard);
+ * the newest message and the jump button stay above it.
  */
-export function ChatList<T>(props: Omit<FlatListProps<T>, "inverted" | "onScroll" | "onContentSizeChange">) {
+export function ChatList<T>({
+	bottomInset,
+	...props
+}: Omit<FlatListProps<T>, "inverted" | "onScroll" | "onContentSizeChange" | "ListHeaderComponent"> & {
+	bottomInset?: SharedValue<number>;
+}) {
 	const list = useRef<FlatList<T>>(null);
 	const viewport = useRef<View>(null);
 	const offset = useRef(0);
 	const contentHeight = useRef(0);
 	const [away, setAway] = useState(false);
+	const noInset = useSharedValue(0);
+	const inset = bottomInset ?? noInset;
+	// Inverted, the list header is the newest end, so this spacer keeps the newest message clear of the overlay.
+	const spacerStyle = useAnimatedStyle(() => ({ height: inset.value }));
+	const jumpStyle = useAnimatedStyle(() => ({ transform: [{ translateY: -inset.value }] }));
 	const anchoring = useMemo<Anchoring>(
 		() => ({
 			measure(view) {
@@ -77,12 +89,13 @@ export function ChatList<T>(props: Omit<FlatListProps<T>, "inverted" | "onScroll
 					onContentSizeChange={(_width, height) => {
 						contentHeight.current = height;
 					}}
+					ListHeaderComponent={<Animated.View style={spacerStyle} />}
 				/>
 				{away ? (
 					<Animated.View
 						entering={FadeIn.duration(150)}
 						exiting={FadeOut.duration(120)}
-						style={styles.jumpSlot}
+						style={[styles.jumpSlot, jumpStyle]}
 						pointerEvents="box-none"
 					>
 						<Pressable

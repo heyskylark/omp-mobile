@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import type { ModelRole, RecentProject } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
-import { Composer, useImageAttachments } from "../../../components/composer";
+import { Composer, useComposerDraft } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
 import { OmpApi, operationId } from "../../../data/api";
 import { useMachine } from "../../../data/machines";
@@ -16,11 +16,10 @@ export default function NewSessionScreen() {
 	const headerHeight = useHeaderHeight();
 	const [projects, setProjects] = useState<RecentProject[]>([]);
 	const [selected, setSelected] = useState(cwd ?? "");
-	const [prompt, setPrompt] = useState("");
 	const [modelRole, setModelRole] = useState<ModelRole>("default");
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
-	const attachments = useImageAttachments();
+	const draft = useComposerDraft(`${machineId}/new`);
 	const skills = useSkills(machine, selected || undefined);
 	useEffect(() => {
 		if (cwd) setSelected(cwd);
@@ -42,7 +41,8 @@ export default function NewSessionScreen() {
 	if (!machine) return <ErrorState message="This computer is no longer paired." />;
 	if (state === "loading") return <Loading label="Loading projects…" />;
 	const create = async () => {
-		const images = attachments.images;
+		const prompt = draft.text;
+		const images = draft.images;
 		if (!selected || (!prompt.trim() && !images.length) || state === "creating") return;
 		setState("creating");
 		try {
@@ -54,6 +54,7 @@ export default function NewSessionScreen() {
 				...(modelRole === "default" ? {} : { modelRole }),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+			draft.clear();
 			router.replace({
 				pathname: "/machine/[machineId]/session/[sessionId]",
 				params: { machineId, sessionId: created.sessionId },
@@ -119,16 +120,16 @@ export default function NewSessionScreen() {
 			<View className="px-4 pb-4">
 				<Composer
 					machineId={machineId}
-					value={prompt}
-					onChangeText={setPrompt}
+					value={draft.text}
+					onChangeText={draft.setText}
 					onSend={() => void create()}
 					onStop={() => {}}
 					working={false}
 					disabled={!selected || state === "creating"}
-					images={attachments.images}
-					onAttach={attachments.attach}
-					onPasteImages={attachments.paste}
-					onRemoveImage={attachments.remove}
+					images={draft.images}
+					onAttach={draft.attach}
+					onPasteImages={draft.paste}
+					onRemoveImage={draft.remove}
 					modelRole={modelRole}
 					onModelRoleChange={setModelRole}
 					skills={skills}
