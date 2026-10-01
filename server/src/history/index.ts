@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { realpath } from "node:fs/promises";
+import { AgentCatalog, locateAgent } from "./agents";
 import type { History, HistoryOptions, SessionMetaPage } from "./api";
 import { SessionCatalog } from "./catalog";
 import { DirectoryBrowser, ProjectPathError, privacyGuarded } from "./directories";
@@ -32,9 +33,11 @@ function decodeListCursor(cursor: string, filter: SessionFilter, secret: Uint8Ar
 
 export { InvalidHistoryCursorError, ProjectPathError };
 export type { History, HistoryOptions, SessionMeta, SessionMetaPage, DurableTail } from "./api";
+export type { AgentFile } from "./agents";
 
 export function createHistory(options: HistoryOptions): History {
 	const catalog = new SessionCatalog(options.sessionsDir);
+	const agents = new AgentCatalog();
 	const pager = new SessionPager(options.cursorSecret);
 	const directories = new DirectoryBrowser(options.roots, async () => {
 		const paths = await Promise.all(
@@ -79,6 +82,19 @@ export function createHistory(options: HistoryOptions): History {
 		async readModelRole(id) {
 			const session = await catalog.find(id);
 			return session ? pager.modelRole(session.file) : "default";
+		},
+		locateAgent,
+		async getSessionByFile(file) {
+			return (await catalog.all()).find((meta) => meta.file === file) ?? null;
+		},
+		listAgents(rootFile) {
+			return agents.list(rootFile);
+		},
+		readAgentTimeline(agent, opts) {
+			return pager.page(agent.file, agent.file, opts.before, opts.limit);
+		},
+		readAgentTail(agent, opts) {
+			return pager.tail(agent.file, opts.afterEntryId, opts.limit);
 		},
 		async recentProjects(limit) {
 			const usable = [];

@@ -1,10 +1,14 @@
-import type { Block, TimelineItem } from "@omp-mobile/protocol";
+import type { AgentSummary, Block, TimelineItem } from "@omp-mobile/protocol";
 import { useState, Fragment } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useMarkdown } from "react-native-marked";
+import { agentName, statusLabel, toolIsWorking } from "../data/agents";
 import { skillSegments } from "../data/skill-draft";
+import { AgentStatusIcon } from "./agent-menu";
 import { SkillSegmentsText } from "./skill-text";
 import { Icon } from "./ui";
+
+const NO_AGENTS: ReadonlyMap<string, AgentSummary> = new Map();
 
 const markdownTheme = {
 	colors: { text: "#ECECEE", border: "#2A2A2E", link: "#8B93FF", code: "#141416" },
@@ -75,17 +79,25 @@ function Blocks({ blocks, markdown, skills }: { blocks: Block[]; markdown: boole
 	);
 }
 
-function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
+type AgentProps = {
+	agents?: ReadonlyMap<string, AgentSummary>;
+	onOpenAgent?(agentId: string): void;
+};
+
+function ToolCard({
+	item,
+	agents = NO_AGENTS,
+	onOpenAgent,
+}: { item: Extract<TimelineItem, { kind: "tool" }> } & AgentProps) {
 	const [expanded, setExpanded] = useState(false);
-	const stateIcon =
-		item.state === "running" ? null : item.state === "succeeded" ? "checkmark.circle.fill" : "xmark.circle.fill";
+	const working = toolIsWorking(item, agents);
+	const stateIcon = item.state === "failed" ? "xmark.circle.fill" : "checkmark.circle.fill";
 	const stateColor = item.state === "failed" ? "#F85149" : "#3FB950";
+	const toggle = () => setExpanded((value) => !value);
+	// Chips sit outside the card's pressables: iOS folds a pressable's children into one accessibility element.
 	return (
-		<Pressable
-			onPress={() => setExpanded((value) => !value)}
-			className="rounded-card border border-border bg-surface px-4 py-3"
-		>
-			<View className="flex-row items-center gap-3">
+		<View className="rounded-card border border-border bg-surface px-4 py-3">
+			<Pressable onPress={toggle} className="flex-row items-center gap-3">
 				<View className="h-8 w-8 items-center justify-center rounded-lg bg-surface-raised">
 					<Icon name="wrench.and.screwdriver" size={15} color="#9A9AA2" />
 				</View>
@@ -95,14 +107,17 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
 					</Text>
 					<Text className="text-[12px] text-secondary">{item.name}</Text>
 				</View>
-				{item.state === "running" ? (
+				{working ? (
 					<ActivityIndicator size="small" color="#8B93FF" />
-				) : stateIcon ? (
+				) : (
 					<Icon name={stateIcon} size={17} color={stateColor} />
-				) : null}
-			</View>
+				)}
+			</Pressable>
+			{item.agentIds?.length ? (
+				<AgentChips agentIds={item.agentIds} agents={agents} onOpenAgent={onOpenAgent} className="mt-3" />
+			) : null}
 			{expanded ? (
-				<View className="mt-3 gap-3 border-t border-border pt-3">
+				<Pressable onPress={toggle} className="mt-3 gap-3 border-t border-border pt-3">
 					<View>
 						<Text className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-secondary">Input</Text>
 						<Text selectable className="font-mono text-caption text-primary">
@@ -119,18 +134,63 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
 							</Text>
 						</View>
 					) : null}
-				</View>
+				</Pressable>
 			) : null}
-		</Pressable>
+		</View>
+	);
+}
+
+function AgentChips({
+	agentIds,
+	agents = NO_AGENTS,
+	onOpenAgent,
+	className = "",
+}: { agentIds: string[]; className?: string } & AgentProps) {
+	return (
+		<View className={`flex-row flex-wrap gap-2 ${className}`}>
+			{agentIds.map((agentId) => {
+				// The roster can trail the item that announced the agent.
+				const status = agents.get(agentId)?.status ?? "running";
+				return (
+					<Pressable
+						key={agentId}
+						accessibilityRole="button"
+						accessibilityLabel={`${agentName(agentId)}, ${statusLabel(status)}`}
+						disabled={!onOpenAgent}
+						onPress={() => onOpenAgent?.(agentId)}
+						className="h-[30px] flex-row items-center gap-1.5 rounded-full border border-border bg-surface-raised pl-2 pr-3 active:opacity-70"
+					>
+						<View className="h-4 w-4 items-center justify-center">
+							<AgentStatusIcon status={status} size={13} />
+						</View>
+						<Text numberOfLines={1} className="max-w-[180px] text-[13px] font-medium text-primary">
+							{agentName(agentId)}
+						</Text>
+					</Pressable>
+				);
+			})}
+		</View>
 	);
 }
 
 /** `skills` are the names shown as chips in the user's messages. */
-export function TimelineRow({ item, skills }: { item: TimelineItem; skills?: ReadonlySet<string> }) {
+export function TimelineRow({
+	item,
+	skills,
+	agents,
+	onOpenAgent,
+}: { item: TimelineItem; skills?: ReadonlySet<string> } & AgentProps) {
 	if (item.kind === "tool")
 		return (
 			<View className="mb-3 px-4">
-				<ToolCard item={item} />
+				<ToolCard item={item} agents={agents} onOpenAgent={onOpenAgent} />
+			</View>
+		);
+	if (item.kind === "event" && item.agentIds?.length)
+		return (
+			<View className="mb-3 flex-row flex-wrap items-center justify-center gap-2 px-8">
+				<Text className="text-[12px] text-secondary">Finished</Text>
+				<AgentChips agentIds={item.agentIds} agents={agents} onOpenAgent={onOpenAgent} />
 			</View>
 		);
 	if (item.kind === "event")

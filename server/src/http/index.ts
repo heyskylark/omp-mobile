@@ -83,9 +83,24 @@ const ExtensionSchema = z.object({
 	approved: z.boolean().optional(),
 	title: z.string().optional(),
 });
+const AgentReportSchema = z.object({
+	event: z.literal("subagent"),
+	pid: z.number().int(),
+	agents: z.array(
+		z.object({
+			id: z.string().min(1).max(500),
+			sessionFile: z.string().min(1),
+			status: z.enum(["running", "completed", "failed", "aborted"]),
+			description: z.string().max(500).optional(),
+			activity: z.string().max(500).optional(),
+		}),
+	),
+});
 const ClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("subscribe"), sessionId: z.string().min(1) }),
 	z.object({ type: z.literal("unsubscribe"), sessionId: z.string().min(1) }),
+	z.object({ type: z.literal("agent.subscribe"), sessionId: z.string().min(1), agentId: z.string().min(1) }),
+	z.object({ type: z.literal("agent.unsubscribe"), sessionId: z.string().min(1), agentId: z.string().min(1) }),
 	z.object({ type: z.literal("ping") }),
 ]);
 const PathParamSchema = z.string().min(1).max(500);
@@ -234,7 +249,10 @@ export function createHttpHandler(
 			if (surface === "loopback" && path === "/internal/extension" && req.method === "POST") {
 				if (req.headers.get("x-omp-mobile-token") !== options.extensionToken)
 					throw new HttpError(401, "unauthorized", "Invalid extension token");
-				options.hub.ingest(ExtensionSchema.parse(await body(req)) as ExtensionEvent);
+				const event = await body(req);
+				const agentReport = AgentReportSchema.safeParse(event);
+				if (agentReport.success) options.hub.ingestAgents(agentReport.data);
+				else options.hub.ingest(ExtensionSchema.parse(event) as ExtensionEvent);
 				return new Response(null, { status: 204 });
 			}
 			if (surface === "loopback" && path.startsWith("/admin/")) {
@@ -336,6 +354,17 @@ export function createHttpHandler(
 				const skills = await options.hub.skills(await options.history.resolveProjectDir(cwd));
 				return json({ skills } satisfies SkillListResponse);
 			}
+			const agentMatch = path.match(/^\/v1\/sessions\/([^/]+)\/agents\/([^/]+)(\/items)?$/);
+			if (agentMatch && req.method === "GET") {
+				const sessionId = parsePathParam(agentMatch[1]!);
+				const agentId = parsePathParam(agentMatch[2]!);
+				const limit = parseLimit(url, 40, 100);
+				const found = agentMatch[3]
+					? await options.hub.agentTimeline(sessionId, agentId, url.searchParams.get("before") ?? undefined, limit)
+					: await options.hub.agentSnapshot(sessionId, agentId, limit);
+				if (!found) throw new HttpError(404, "not_found", "Agent not found");
+				return json(found);
+			}
 			const itemsMatch = path.match(/^\/v1\/sessions\/([^/]+)\/items$/);
 			if (itemsMatch && req.method === "GET") {
 				return json(
@@ -416,6 +445,17 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 				} else if (message.type === "unsubscribe") {
 					ws.data.unsubscribers.get(message.sessionId)?.();
 					ws.data.unsubscribers.delete(message.sessionId);
+				} else if (message.type === "agent.subscribe" || message.type === "agent.unsubscribe") {
+					// Session ids never contain a newline, so agent keys cannot collide with session keys.
+					const key = `${message.sessionId}\n${message.agentId}`;
+					if (message.type === "agent.unsubscribe") {
+						ws.data.unsubscribers.get(key)?.();
+						ws.data.unsubscribers.delete(key);
+					} else if (!ws.data.unsubscribers.has(key))
+						ws.data.unsubscribers.set(
+							key,
+							options.hub.subscribeAgent(message.sessionId, message.agentId, (out) => ws.send(JSON.stringify(out))),
+						);
 				}
 			} catch (error) {
 				ws.send(

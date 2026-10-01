@@ -262,13 +262,39 @@ export class SessionPager {
 			const key = messageKey(entry);
 			if (key) messageKeys.push(key);
 		}
-		const bounded = items.length > limit ? items.slice(-limit) : items;
+		const finished = await this.#finishedEarlierCalls(file, index, active, start, results, items);
+		const bounded = [...(items.length > limit ? items.slice(-limit) : items), ...finished];
 		const included = new Set(bounded.map((item) => item.id));
 		return {
 			items: bounded,
 			messageKeys: messageKeys.filter((key) => included.has(key.itemId)),
 			...(active.length ? { lastEntryId: index.entries[active.at(-1)!]?.id } : {}),
 		};
+	}
+
+	/**
+	 * Tool items whose call precedes `start` but whose result is at or after it. A tail read stops at the cursor, so
+	 * without these a call saved before its result would stay running for readers without live tool events.
+	 */
+	async #finishedEarlierCalls(
+		file: string,
+		index: FileIndex,
+		active: number[],
+		start: number,
+		results: ReadonlyMap<string, Record<string, unknown>>,
+		items: readonly TimelineItem[],
+	): Promise<TimelineItem[]> {
+		const late = new Set([...results.keys()].map((callId) => `t:${callId}`));
+		for (const item of items) late.delete(item.id);
+		const found: TimelineItem[] = [];
+		for (let i = start - 1; i >= Math.max(0, start - 64) && late.size; i--) {
+			const descriptor = index.entries[active[i]!];
+			if (descriptor?.type !== "message") continue;
+			const entry = await this.#readEntry(file, descriptor);
+			if (!entry) continue;
+			for (const item of mapEntry(entry, results)) if (late.delete(item.id)) found.push(item);
+		}
+		return found;
 	}
 
 	/**

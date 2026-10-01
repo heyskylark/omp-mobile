@@ -45,7 +45,7 @@ name: new-session-approve
     timeout: 60000
 - takeScreenshot: new-04-turn-finished
 - tapOn: ".*, bash, .*"
-# An expanded tool card is one accessibility element: "<icon>, <title>, bash, selected, INPUT, <json>, OUTPUT, <text>".
+# An expanded tool card's details are one accessibility element: "INPUT, <json>, OUTPUT, <text>".
 - extendedWaitUntil:
     visible: "(?s).*OUTPUT, ${TOKEN}\\b.*"
     timeout: 15000

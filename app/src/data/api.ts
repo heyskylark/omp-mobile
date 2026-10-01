@@ -1,4 +1,5 @@
 import type {
+	AgentThreadSnapshot,
 	ApiError,
 	CreateSessionRequest,
 	DirectoryListing,
@@ -130,6 +131,23 @@ export class OmpApi {
 			`/v1/sessions/${encodeURIComponent(sessionId)}/items?${query}`,
 			{ method: "GET" },
 			typed<TimelinePage>("timeline", ["items"]),
+		);
+	}
+
+	agentSnapshot(sessionId: string, agentId: string, limit = 40) {
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(agentId)}?limit=${limit}`,
+			{ method: "GET" },
+			typed<AgentThreadSnapshot>("agent", ["agents", "items"]),
+		);
+	}
+
+	agentTimeline(sessionId: string, agentId: string, before: string, limit = 40) {
+		const query = new URLSearchParams({ before, limit: String(limit) });
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(agentId)}/items?${query}`,
+			{ method: "GET" },
+			typed<TimelinePage>("agent timeline", ["items"]),
 		);
 	}
 

@@ -1,20 +1,24 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
-import { useLocalSearchParams, useNavigation } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import * as Haptics from "expo-haptics";
-import type { InteractionResponse, ModelRole, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
-import { Composer, useImageAttachments } from "../../../../components/composer";
-import { InteractionPanel } from "../../../../components/interaction-panel";
-import { livenessLabel } from "../../../../components/session-meta";
-import { TimelineRow } from "../../../../components/timeline";
-import { ErrorState, Icon, Loading } from "../../../../components/ui";
-import { useToast } from "../../../../components/toast";
-import { OmpApi, operationId } from "../../../../data/api";
-import { acquireMachineSocket } from "../../../../data/live";
-import { useMachine } from "../../../../data/machines";
-import { sessionViewReducer, type SessionViewState } from "../../../../data/session-reducer";
-import { useSkills } from "../../../../data/skills";
+import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
+import { AgentsButton } from "../../../../../components/agent-menu";
+import { Composer, useImageAttachments } from "../../../../../components/composer";
+import { InteractionPanel } from "../../../../../components/interaction-panel";
+import { livenessLabel } from "../../../../../components/session-meta";
+import { TimelineRow } from "../../../../../components/timeline";
+import { ErrorState, Icon, Loading } from "../../../../../components/ui";
+import { useToast } from "../../../../../components/toast";
+import { runningCount } from "../../../../../data/agents";
+import { OmpApi, operationId } from "../../../../../data/api";
+import { acquireMachineSocket } from "../../../../../data/live";
+import { useMachine } from "../../../../../data/machines";
+import { sessionViewReducer, type SessionViewState } from "../../../../../data/session-reducer";
+import { useSkills } from "../../../../../data/skills";
+
+const NO_AGENTS: AgentSummary[] = [];
 
 export default function SessionScreen() {
 	const { machineId, sessionId } = useLocalSearchParams<{ machineId: string; sessionId: string }>();
@@ -32,6 +36,16 @@ export default function SessionScreen() {
 	const list = useRef<FlatList<TimelineItem>>(null);
 	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
 	const skillNames = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
+	const agents = view.kind === "ready" ? view.agents : NO_AGENTS;
+	const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+	const openAgent = useCallback(
+		(agentId: string) =>
+			router.push({
+				pathname: "/machine/[machineId]/session/[sessionId]/agent/[agentId]",
+				params: { machineId, sessionId, agentId },
+			}),
+		[machineId, sessionId],
+	);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
 		try {
@@ -78,6 +92,7 @@ export default function SessionScreen() {
 	useLayoutEffect(() => {
 		if (view.kind !== "ready") return;
 		const badge = livenessLabel(view.session.liveness, view.session.pendingCount);
+		const running = runningCount(view.agents);
 		navigation.setOptions({
 			title: view.session.title,
 			headerTitle: () => (
@@ -88,19 +103,26 @@ export default function SessionScreen() {
 					<Text numberOfLines={1} className="text-[11px] text-secondary">
 						{view.session.project.name}
 						{badge ? ` · ${badge}` : ""}
+						{running ? ` · ${running} ${running === 1 ? "agent" : "agents"} running` : ""}
 					</Text>
 				</View>
 			),
+			// An empty headerRight still draws an empty button background.
 			headerRight:
-				view.session.liveness.kind === "server"
+				view.agents.length || view.session.liveness.kind === "server"
 					? () => (
-							<Pressable accessibilityLabel="Session menu" onPress={handoff}>
-								<Icon name="ellipsis.circle" color="#9A9AA2" size={21} />
-							</Pressable>
+							<View className="flex-row items-center gap-3">
+								<AgentsButton agents={view.agents} onOpen={openAgent} />
+								{view.session.liveness.kind === "server" ? (
+									<Pressable accessibilityLabel="Session menu" onPress={handoff}>
+										<Icon name="ellipsis.circle" color="#9A9AA2" size={21} />
+									</Pressable>
+								) : null}
+							</View>
 						)
 					: undefined,
 		});
-	}, [view, navigation, handoff]);
+	}, [view, navigation, handoff, openAgent]);
 	if (!machine || !api) return <ErrorState message="This computer is no longer paired." />;
 	if (view.kind === "loading") return <Loading label="Loading session…" />;
 	if (view.kind === "error") return <ErrorState message={view.message} retry={() => void loadSnapshot()} />;
@@ -187,9 +209,11 @@ export default function SessionScreen() {
 				ref={list}
 				inverted
 				data={newestFirst}
-				extraData={skillNames}
+				extraData={[skillNames, agentsById]}
 				keyExtractor={(item) => item.id}
-				renderItem={({ item }) => <TimelineRow item={item} skills={skillNames} />}
+				renderItem={({ item }) => (
+					<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
+				)}
 				contentContainerClassName="px-4 pb-3 pt-5"
 				keyboardDismissMode="on-drag"
 				onEndReached={() => void loadOlder()}

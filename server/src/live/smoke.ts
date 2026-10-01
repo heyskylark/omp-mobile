@@ -118,6 +118,21 @@ const history: History = {
 	async readModelRole() {
 		return "default" as const;
 	},
+	async locateAgent() {
+		return null;
+	},
+	async getSessionByFile() {
+		return null;
+	},
+	async listAgents() {
+		return [];
+	},
+	async readAgentTimeline() {
+		return { items: [] };
+	},
+	async readAgentTail() {
+		return { items: [], messageKeys: [] };
+	},
 	async recentProjects() {
 		return [];
 	},

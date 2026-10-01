@@ -31,6 +31,8 @@ type ExtensionApi = {
 	setThinkingLevel(level: string): void;
 	appendEntry(customType: string, data?: unknown): void;
 	pi: { settings: { getModelRole(role: string): string | undefined } };
+	/** OMP's session event bus; carries the `task:subagent:*` channels. */
+	events?: { on(channel: string, handler: (payload: unknown) => void): unknown };
 };
 
 /** The server sends `/omp-mobile-model <role>` to its rpc children; keep in sync with `server/src/live/actor.ts`. */
@@ -183,25 +185,16 @@ async function autoTitle(prompt: string, context: ExtensionContext): Promise<voi
 	}
 }
 
-async function post(event: Event, context: ExtensionContext): Promise<void> {
+async function send(body: Record<string, unknown>): Promise<void> {
 	const server = await readServer();
 	if (!server) return;
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), 750);
 	try {
-		const { type, ...fields } = event;
 		await fetch(`http://127.0.0.1:${server.port}/internal/extension`, {
 			method: "POST",
 			headers: { "content-type": "application/json", "x-omp-mobile-token": server.extensionToken },
-			body: JSON.stringify({
-				...fields,
-				event: type,
-				sessionId: event.sessionId ?? context.sessionManager.getSessionId(),
-				sessionFile: context.sessionManager.getSessionFile(),
-				cwd: context.cwd,
-				pid: process.pid,
-				mode: context.mode,
-			}),
+			body: JSON.stringify(body),
 			signal: controller.signal,
 		});
 	} catch {
@@ -211,12 +204,93 @@ async function post(event: Event, context: ExtensionContext): Promise<void> {
 	}
 }
 
+function post(event: Event, context: ExtensionContext): Promise<void> {
+	const { type, ...fields } = event;
+	return send({
+		...fields,
+		event: type,
+		sessionId: event.sessionId ?? context.sessionManager.getSessionId(),
+		sessionFile: context.sessionManager.getSessionFile(),
+		cwd: context.cwd,
+		pid: process.pid,
+		mode: context.mode,
+	});
+}
+
+type AgentSignal = {
+	id: string;
+	sessionFile: string;
+	status: "running" | "completed" | "failed" | "aborted";
+	description?: string;
+	activity?: string;
+};
+
+const AGENT_STATUS: Record<string, AgentSignal["status"]> = {
+	started: "running",
+	pending: "running",
+	running: "running",
+	completed: "completed",
+	failed: "failed",
+	aborted: "aborted",
+};
+
+function text(record: object, key: string): string | undefined {
+	const value: unknown = key in record ? Reflect.get(record, key) : undefined;
+	return typeof value === "string" && value ? value.slice(0, 500) : undefined;
+}
+
+/** Reads a `task:subagent:lifecycle` payload, or the `progress` of a `task:subagent:progress` payload. */
+function agentSignal(state: unknown, sessionFile: unknown): AgentSignal | undefined {
+	if (!state || typeof state !== "object" || typeof sessionFile !== "string") return undefined;
+	const id = text(state, "id");
+	const status = AGENT_STATUS[text(state, "status") ?? ""];
+	if (!id || !status) return undefined;
+	const description = text(state, "description");
+	const activity = text(state, "lastIntent") ?? text(state, "currentTool");
+	return { id, sessionFile, status, ...(description ? { description } : {}), ...(activity ? { activity } : {}) };
+}
+
+/** Latest unsent state per agent. OMP reports progress every ~150 ms per agent; the phone needs about one a second. */
+const agentQueue = new Map<string, AgentSignal>();
+let agentFlush: ReturnType<typeof setTimeout> | undefined;
+/** Posts go out one at a time so the server sees each agent's states in order. */
+let agentPosts = Promise.resolve();
+
+function reportAgent(signal: AgentSignal | undefined, urgent: boolean): void {
+	if (!signal) return;
+	const queued = agentQueue.get(signal.id);
+	agentQueue.set(signal.id, {
+		...signal,
+		description: signal.description ?? queued?.description,
+	});
+	if (urgent) clearTimeout(agentFlush);
+	else if (agentFlush) return;
+	agentFlush = setTimeout(
+		() => {
+			agentFlush = undefined;
+			const agents = [...agentQueue.values()];
+			agentQueue.clear();
+			agentPosts = agentPosts.then(() => send({ event: "subagent", pid: process.pid, agents }));
+		},
+		urgent ? 0 : 1000,
+	);
+}
+
 export default function ompMobileExtension(api: ExtensionApi): void {
 	const forward = (fields: string[]) => (event: Event, context: ExtensionContext) => {
 		const payload: Event = { type: event.type };
 		for (const field of fields) if (field in event) payload[field] = event[field];
 		context.setTimeout(() => post(payload, context), 0);
 	};
+	// Each session gets its own bus; OMP publishes every task agent's events, nested ones included, on its root's.
+	api.events?.on("task:subagent:lifecycle", (payload) => {
+		if (payload && typeof payload === "object")
+			reportAgent(agentSignal(payload, Reflect.get(payload, "sessionFile")), true);
+	});
+	api.events?.on("task:subagent:progress", (payload) => {
+		if (payload && typeof payload === "object")
+			reportAgent(agentSignal(Reflect.get(payload, "progress"), Reflect.get(payload, "sessionFile")), false);
+	});
 	api.on("session_start", forward([]));
 	api.on("session_shutdown", (event, context) => post({ type: event.type }, context));
 	api.on("agent_start", forward([]));

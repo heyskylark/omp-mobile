@@ -32,6 +32,7 @@ const snapshot: SessionSnapshot = {
 	items: [],
 	pending: [],
 	modelRole: "default",
+	agents: [],
 };
 
 class FakeHub implements LiveHub {
@@ -72,6 +73,16 @@ class FakeHub implements LiveHub {
 		return { operationId: req.operationId, state: "applied" as const };
 	}
 	ingest(_event: ExtensionEvent) {}
+	ingestAgents() {}
+	async agentSnapshot() {
+		return null;
+	}
+	async agentTimeline() {
+		return null;
+	}
+	subscribeAgent() {
+		return () => {};
+	}
 	onNotify(_listener: (notification: LiveNotification) => void) {
 		return () => {};
 	}
@@ -98,6 +109,21 @@ const history: History = {
 	},
 	async readModelRole() {
 		return "default" as const;
+	},
+	async locateAgent() {
+		return null;
+	},
+	async getSessionByFile() {
+		return null;
+	},
+	async listAgents() {
+		return [];
+	},
+	async readAgentTimeline() {
+		return { items: [] };
+	},
+	async readAgentTail() {
+		return { items: [], messageKeys: [] };
 	},
 	async recentProjects() {
 		return [{ path: "/tmp/project", name: "project", lastUsedAt: meta.updatedAt, sessionCount: 1 }];

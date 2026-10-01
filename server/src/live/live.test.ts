@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,6 +12,7 @@ import {
 	type InteractionRecord,
 } from "./interactions.ts";
 import { publicLiveness, reduceOwnership, type OwnershipState } from "./state.ts";
+import { AgentCatalog, locateAgent } from "../history/agents.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import type { ServerMessage } from "@omp-mobile/protocol";
 import { createLiveHub } from "./index.ts";
@@ -57,7 +58,21 @@ describe("ownership reducer", () => {
 });
 
 function stubHistory(sessions: SessionMeta[] = []): History {
+	const agents = new AgentCatalog();
 	return {
+		locateAgent,
+		async getSessionByFile(file) {
+			return sessions.find((session) => session.file === file) ?? null;
+		},
+		listAgents(rootFile) {
+			return agents.list(rootFile);
+		},
+		async readAgentTimeline() {
+			return { items: [] };
+		},
+		async readAgentTail() {
+			return { items: [], messageKeys: [] };
+		},
 		async listSessions() {
 			return { items: sessions };
 		},
@@ -108,6 +123,83 @@ test("terminal session_start creates ownership before history catalog catches up
 	);
 });
 
+// The fake runs as a real child process, so tests poll for its effects instead of faking time.
+async function until(condition: () => boolean | Promise<boolean>, label: string) {
+	for (const deadline = Date.now() + 3_000; !(await condition()); await Bun.sleep(10))
+		if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
+}
+
+describe("task agents", () => {
+	const header = (id: string) => `${JSON.stringify({ type: "session", version: 3, id, cwd: "/tmp/project" })}\n`;
+
+	async function layout() {
+		const dir = await mkdtemp(join(tmpdir(), "omp-mobile-agents-"));
+		const root = join(dir, "root.jsonl");
+		await writeFile(root, header("root"));
+		await mkdir(join(dir, "root"));
+		return { dir, root, agentFile: (id: string) => join(dir, "root", `${id}.jsonl`) };
+	}
+
+	test("a task agent's own OMP session never becomes a session", async () => {
+		const { dir, agentFile } = await layout();
+		await writeFile(agentFile("Alpha"), header("alpha"));
+		const hub = createLiveHub({ history: stubHistory(), ompPath: "omp", relayPort: 0, extensionPath: "/tmp/e.ts" });
+		try {
+			const start = { event: "session_start" as const, cwd: "/tmp/project", pid: process.pid };
+			hub.ingest({ ...start, sessionId: "alpha", sessionFile: agentFile("Alpha"), mode: "print" });
+			hub.ingest({ ...start, sessionId: "terminal", sessionFile: join(dir, "terminal.jsonl"), mode: "tui" });
+			await until(() => hub.activeSummaries().length > 0, "the terminal session");
+			expect(hub.activeSummaries().map((session) => session.id)).toEqual(["terminal"]);
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("an agent's transcript end beats a stale report, and a report from a dead process is not running", async () => {
+		const { dir, root, agentFile } = await layout();
+		const result = { role: "toolResult", toolName: "yield", toolCallId: "y", details: { status: "success" } };
+		await writeFile(agentFile("Done"), header("done") + JSON.stringify({ type: "message", id: "y", message: result }));
+		await writeFile(agentFile("Orphan"), header("orphan"));
+		await writeFile(agentFile("Busy"), header("busy"));
+		const exited = Bun.spawn(["true"]);
+		await exited.exited;
+		const session = {
+			id: "root",
+			file: root,
+			cwd: "/tmp/project",
+			title: "Root",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+			status: "complete" as const,
+		};
+		const hub = createLiveHub({
+			history: stubHistory([session]),
+			ompPath: "omp",
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+		});
+		try {
+			const running = (id: string) => ({ id, sessionFile: agentFile(id), status: "running" as const });
+			hub.ingestAgents({ pid: process.pid, agents: [running("Done"), { ...running("Busy"), activity: "Reading" }] });
+			hub.ingestAgents({ pid: exited.pid, agents: [running("Orphan")] });
+			const statuses = async () =>
+				Object.fromEntries(
+					((await hub.snapshot("root", 40))?.agents ?? []).map((agent) => [agent.id, [agent.status, agent.activity]]),
+				);
+			await until(async () => Object.keys(await statuses()).length === 3, "all three agents");
+			expect(await statuses()).toEqual({
+				Done: ["completed", undefined],
+				Busy: ["running", "Reading"],
+				Orphan: ["interrupted", undefined],
+			});
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("server-owned session", () => {
 	// Minimal `omp --mode rpc-ui`: answers commands and runs each prompt as one turn with one finished bash call.
 	const fakeOmp = `#!/usr/bin/env bun
@@ -118,7 +210,7 @@ for await (const line of console) {
 	if (!line.trim()) continue;
 	const command = JSON.parse(line);
 	if (command.type === "get_state")
-		out({ type: "response", id: command.id, success: true, data: { sessionId: "fake", sessionFile: "/tmp/fake.jsonl" } });
+		out({ type: "response", id: command.id, success: true, data: { sessionId: "fake", sessionFile: process.cwd() + "/fake.jsonl" } });
 	else out({ type: "response", id: command.id, success: true });
 	if (command.type !== "prompt") continue;
 	const call = "call-" + ++turn;
@@ -130,11 +222,39 @@ for await (const line of console) {
 }
 `;
 
-	// The fake runs as a real child process, so the test polls for its effects instead of faking time.
-	async function until(condition: () => boolean | Promise<boolean>, label: string) {
-		for (const deadline = Date.now() + 3_000; !(await condition()); await Bun.sleep(10))
-			if (Date.now() > deadline) throw new Error(`Timed out waiting for ${label}`);
-	}
+	test("keeps OMP running while its task agents run, and closes it once they stop", async () => {
+		// The fake reports its cwd's real path, as OMP does.
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		await writeFile(ompPath, fakeOmp, { mode: 0o755 });
+		await writeFile(join(dir, "fake.jsonl"), "");
+		await mkdir(join(dir, "fake"));
+		const agentFile = join(dir, "fake", "Alpha.jsonl");
+		await writeFile(agentFile, `${JSON.stringify({ type: "session", version: 3, id: "alpha", cwd: dir })}\n`);
+		const settleGraceMs = 500;
+		const hub = createLiveHub({
+			history: stubHistory(),
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs,
+		});
+		const report = (status: "running" | "completed") =>
+			hub.ingestAgents({ pid: process.pid, agents: [{ id: "Alpha", sessionFile: agentFile, status }] });
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "spawn", operationId: "op-1" });
+			// The turn has ended and armed the close timer before the agent's first report arrives.
+			report("running");
+			// The close timer guards a real child process, so only real time can show it did not fire.
+			await Bun.sleep(settleGraceMs * 2);
+			expect(hub.overlay(sessionId).liveness).toEqual({ kind: "server", phase: "ready" });
+			report("completed");
+			await until(() => hub.overlay(sessionId).liveness.kind === "idle", "OMP to close after its agent finished");
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
 
 	test("keeps following OMP after a history read fails and does not replay finished tools", async () => {
 		const dir = await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-"));

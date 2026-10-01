@@ -1,0 +1,37 @@
+# Starts a session from the phone in the run's scratch project whose agent spawns background task agents Alpha and
+# Beta, Alpha spawning Gamma, approves the task call, and waits until the agents button shows them running.
+# Costs one small parent turn plus three agent turns (agents run on OMP's `task` model role).
+# env: MACHINE_NAME, TOKEN (unique word that starts the prompt and so the session title), SLEEP (seconds each agent waits)
+appId: com.heyskylark.ompmobile
+name: new-session-agents
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Message OMP"
+- inputText: "${TOKEN}: use the task tool exactly once to spawn two agents in parallel named Alpha and Beta. Alpha must use the task tool once to spawn one agent named Gamma that runs the bash command `sleep ${SLEEP} && echo gamma-ok`, then wait for Gamma and report its output. Beta runs the bash command `sleep ${SLEEP} && echo beta-ok` and reports its output. Do not wait for the agents: end your turn right after the task tool returns by replying Spawned."
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Allow tool: .*"
+    timeout: 120000
+- takeScreenshot: agents-new-01-task-approval
+- tapOn: "Approve"
+- extendedWaitUntil:
+    visible: "Agents, .* running"
+    timeout: 120000
+- takeScreenshot: agents-new-02-running

@@ -1,0 +1,68 @@
+# Opens a session whose task agents are still running: the agents menu, a nested agent from the menu, a top-level
+# agent from the task card's chip, the nested agent again from that thread's chip, then back to the main thread.
+# env: MACHINE_NAME, SESSION_TITLE (regex-escaped), AGENT (top-level agent name), NESTED (AGENT's child's name).
+# The agents button reads "Agents, <N> running" ("Agents" once none run); chips and menu rows read
+# "<name>, <status>". A menu row and a
+appId: com.heyskylark.ompmobile
+name: agent-threads
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: "${SESSION_TITLE},.*"
+    timeout: 30000
+- tapOn: "${SESSION_TITLE},.*"
+- extendedWaitUntil:
+    visible: "Agents(, .*)?"
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: agents-01-main-thread
+- tapOn: "Agents(, .*)?"
+- waitForAnimationToEnd
+- takeScreenshot: agents-02-menu
+- tapOn: "${NESTED}, .*"
+- extendedWaitUntil:
+    notVisible: "Message OMP"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: agents-03-nested-from-menu
+# Tool cards in an agent thread expand like the main thread's; the header row reads "wrench.and.screwdriver, <title>,
+# <tool>, …" and the expanded block "INPUT, <input>, OUTPUT, <output>".
+- tapOn: "wrench\\.and\\.screwdriver, .*, bash.*"
+- extendedWaitUntil:
+    visible: "(?s)INPUT, .*"
+    timeout: 10000
+- takeScreenshot: agents-03b-tool-expanded
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible: "Message OMP"
+    timeout: 15000
+# Finished agents also show a chip in their "Finished" row, which may have pushed the task card up; either opens it.
+- scrollUntilVisible:
+    element:
+      text: "${AGENT}, .*"
+    direction: UP
+    timeout: 15000
+- tapOn: "${AGENT}, .*"
+- extendedWaitUntil:
+    notVisible: "Message OMP"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: agents-04-agent-from-chip
+- tapOn: "${NESTED}, .*"
+- waitForAnimationToEnd
+- takeScreenshot: agents-05-nested-from-chip
+- tapOn:
+    id: "BackButton"
+- waitForAnimationToEnd
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible: "Message OMP"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: agents-06-back-to-main
