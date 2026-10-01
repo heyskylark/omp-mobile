@@ -234,6 +234,7 @@ export default function SessionScreen() {
 					/>
 				) : null}
 				<Composer
+					machineId={machineId}
 					value={prompt}
 					onChangeText={setPrompt}
 					onSend={() => void send()}

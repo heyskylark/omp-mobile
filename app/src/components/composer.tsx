@@ -1,6 +1,7 @@
 import { MAX_PROMPT_IMAGES, type ModelRole, type SkillCommand } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
+import { router } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import Animated, {
@@ -113,7 +114,10 @@ function ActionButton({
 	);
 }
 
+const USAGE_COMMAND = "/usage";
+
 export function Composer({
+	machineId,
 	value,
 	onChangeText,
 	onSend,
@@ -129,6 +133,7 @@ export function Composer({
 	modelRoleDisabled,
 	skills = [],
 }: {
+	machineId: string;
 	value: string;
 	onChangeText(value: string): void;
 	onSend(): void;
@@ -168,6 +173,13 @@ export function Composer({
 	// The open slider anchors to the panel, so the panel holds its shape until it closes.
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const hasContent = Boolean(value.trim()) || images.length > 0;
+	const usageCommand = value.trim() === USAGE_COMMAND;
+	const send = () => {
+		if (!usageCommand) return onSend();
+		onChangeText("");
+		Keyboard.dismiss();
+		router.push({ pathname: "/machine/[machineId]/usage", params: { machineId } });
+	};
 	const compact = !keyboardVisible && !value && !images.length && !pickerOpen;
 	const known = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const segments = useMemo(() => skillSegments(value, known, false), [value, known]);
@@ -212,15 +224,16 @@ export function Composer({
 				onPress={onAttach}
 			/>
 		) : null;
+	const steer = working && !usageCommand;
 	const sendOrSteer =
 		!working || hasContent ? (
 			<ActionButton
-				key={working ? "steer" : "send"}
-				label={working ? "Steer" : "Send"}
-				icon={working ? "arrow.turn.down.right" : "arrow.up"}
-				tone={working ? "steer" : "send"}
-				disabled={disabled || !hasContent}
-				onPress={onSend}
+				key={steer ? "steer" : "send"}
+				label={steer ? "Steer" : "Send"}
+				icon={steer ? "arrow.turn.down.right" : "arrow.up"}
+				tone={steer ? "steer" : "send"}
+				disabled={!usageCommand && (disabled || !hasContent)}
+				onPress={send}
 			/>
 		) : null;
 	const stop = working ? (
