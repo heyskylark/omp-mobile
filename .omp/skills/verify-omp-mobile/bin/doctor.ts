@@ -16,7 +16,21 @@ const fail = (msg: string) => {
 	failed = true;
 	console.log(`FAIL  ${msg}`);
 };
+const installHints: Record<string, string> = {
+	omp: "install omp or add its directory to PATH",
+	lsof: "add /usr/sbin to PATH",
+	xcrun: "install Xcode and select it with xcode-select",
+	maestro: "install Maestro or add ~/.maestro/bin to PATH",
+	java: "install a JDK 17+ on PATH or set JAVA_HOME",
+};
+const missing = (tool: string) => {
+	if (Bun.which(tool)) return false;
+	fail(`${tool} not found on PATH (${installHints[tool]})`);
+	return true;
+};
+// Returns undefined (after recording a FAIL) when the executable is not on PATH.
 const run = (argv: string[]) => {
+	if (missing(argv[0])) return undefined;
 	const p = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
 	return { code: p.exitCode, out: p.stdout.toString().trim(), err: p.stderr.toString().trim() };
 };
@@ -35,7 +49,7 @@ ok(`run ${runId}: home=${env.OMP_MOBILE_HOME} evidence=${env.EVIDENCE}`);
 if (!existsSync(env.EVIDENCE)) fail(`evidence root missing: ${env.EVIDENCE}`);
 
 const omp = run(["omp", "--version"]);
-omp.code === 0 ? ok(`omp ${omp.out}`) : fail(`omp --version: ${omp.err}`);
+if (omp) omp.code === 0 ? ok(`omp ${omp.out}`) : fail(`omp --version: ${omp.err}`);
 
 const serverJson = join(env.OMP_MOBILE_HOME, "server.json");
 if (!existsSync(serverJson)) {
@@ -44,10 +58,13 @@ if (!existsSync(serverJson)) {
 	// Written by this repository's server (server/src/main.ts); the listener and status checks below validate it.
 	const server = JSON.parse(readFileSync(serverJson, "utf8")) as { port: number; pid: number; adminToken: string };
 	if (String(server.port) !== env.PORT) fail(`server.json port ${server.port} != run port ${env.PORT}`);
-	const listeners = run(["lsof", "-nP", "-t", `-iTCP:${env.PORT}`, "-sTCP:LISTEN"]).out.split("\n");
-	listeners.includes(String(server.pid))
-		? ok(`server pid ${server.pid} listens on 127.0.0.1:${env.PORT}`)
-		: fail(`port ${env.PORT} listeners [${listeners.join(",")}] do not include server.json pid ${server.pid}`);
+	const lsof = run(["lsof", "-nP", "-t", `-iTCP:${env.PORT}`, "-sTCP:LISTEN"]);
+	if (lsof) {
+		const listeners = lsof.out.split("\n");
+		listeners.includes(String(server.pid))
+			? ok(`server pid ${server.pid} listens on 127.0.0.1:${env.PORT}`)
+			: fail(`port ${env.PORT} listeners [${listeners.join(",")}] do not include server.json pid ${server.pid}`);
+	}
 	try {
 		const res = await fetch(`http://127.0.0.1:${env.PORT}/admin/status`, {
 			headers: { authorization: `Bearer ${server.adminToken}` },
@@ -72,8 +89,8 @@ if (checkSim) {
 	const udid = env.SIM_UDID;
 	if (!udid) {
 		fail("run.env has no SIM_UDID; run sim-create.sh");
-	} else {
-		const devices = JSON.parse(run(["xcrun", "simctl", "list", "devices", "-j"]).out).devices as Record<
+	} else if (!missing("xcrun")) {
+		const devices = JSON.parse(run(["xcrun", "simctl", "list", "devices", "-j"])!.out).devices as Record<
 			string,
 			{ udid: string; name: string; state: string }[]
 		>;
@@ -93,7 +110,7 @@ if (checkSim) {
 		}
 
 		const bundleId = process.env.OMP_BUNDLE_ID ?? "com.heyskylark.ompmobile";
-		const container = run(["xcrun", "simctl", "get_app_container", udid, bundleId, "app"]);
+		const container = run(["xcrun", "simctl", "get_app_container", udid, bundleId, "app"])!;
 		if (container.code !== 0) {
 			fail(`${bundleId} not installed on ${udid}; run scripts/simulator.sh ${udid}`);
 		} else {
@@ -116,9 +133,9 @@ if (checkSim) {
 		}
 	}
 	const maestro = run(["maestro", "--version"]);
-	maestro.code === 0 ? ok(`maestro ${maestro.out.split("\n").pop()}`) : fail(`maestro: ${maestro.err}`);
+	if (maestro) maestro.code === 0 ? ok(`maestro ${maestro.out.split("\n").pop()}`) : fail(`maestro: ${maestro.err}`);
 	const java = run(["java", "-version"]);
-	java.code === 0 ? ok(`java ${java.err.split("\n")[0]}`) : fail("java not found; Maestro needs a JDK on PATH or JAVA_HOME");
+	if (java) java.code === 0 ? ok(`java ${java.err.split("\n")[0]}`) : fail("java not found; Maestro needs a JDK on PATH or JAVA_HOME");
 }
 
 process.exit(failed ? 1 : 0);
