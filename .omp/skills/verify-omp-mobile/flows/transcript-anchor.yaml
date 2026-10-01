@@ -1,0 +1,41 @@
+# In a transcript already opened by open-session.yaml: expands a finished tool card whose output is taller than
+# the screen, scrolls its header off the top, collapses it by tapping its output, then jumps back to the newest
+# message.
+# env: TOOL_TITLE (regex-escaped title of that tool card)
+appId: com.heyskylark.ompmobile
+name: transcript-anchor
+---
+- scrollUntilVisible:
+    element:
+      text: ".*${TOOL_TITLE}.*"
+    direction: UP
+    centerElement: true
+    timeout: 30000
+- waitForAnimationToEnd
+# Scrolled away from the newest message, the round jump button floats above the composer.
+- assertVisible: "Scroll to bottom"
+- takeScreenshot: anchor-01-collapsed
+- tapOn: ".*${TOOL_TITLE}.*"
+- waitForAnimationToEnd
+# The header stays where it was tapped; input and output open below it.
+- takeScreenshot: anchor-02-expanded
+- swipe:
+    start: 50%, 75%
+    end: 50%, 30%
+    duration: 800
+- swipe:
+    start: 50%, 75%
+    end: 50%, 30%
+    duration: 800
+- waitForAnimationToEnd
+- takeScreenshot: anchor-03-header-off-screen
+# Tapping the output collapses the card and brings it back to the top of the screen.
+- tapOn:
+    point: 50%, 50%
+- waitForAnimationToEnd
+- takeScreenshot: anchor-04-collapsed-in-view
+- tapOn: "Scroll to bottom"
+- waitForAnimationToEnd
+- assertNotVisible: "Scroll to bottom"
+- assertVisible: "Message OMP"
+- takeScreenshot: anchor-05-newest

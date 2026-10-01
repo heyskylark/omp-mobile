@@ -10,6 +10,8 @@ The user browses every OMP session on a paired computer, newest first, and opens
 - `history-paging`: scrolling up in a long transcript loads 40 older items (`GET /v1/sessions/<id>/items?before=<olderCursor>&limit=40`); `Loading earlier messages…` shows while it loads. **Exercised** (`transcript-expand-page.yaml`).
 - `history-expand-thought`: `Thought ▾` → `Thought ▴` plus the thinking text (or `Reasoning was redacted.`). **Exercised** (`transcript-expand-page.yaml`).
 - `history-expand-tool`: tapping a tool card shows `INPUT` / `OUTPUT` (source `Input` / `Output` / `Output · truncated`, styled uppercase). **Exercised** (`new-session-approve.yaml`).
+- `history-expand-anchor`: expanding a thought or tool card keeps its header at the same height on screen and opens the content below it; collapsing keeps the header still, or, when the header has scrolled off the top, brings the collapsed card back to the top of the screen. Agent threads use the same list. **Exercised** in the session transcript (`transcript-anchor.yaml`); agent threads recipe-only.
+- `history-jump-bottom`: once the transcript is scrolled more than 160 pt away from the newest message, a round `Scroll to bottom` button (down arrow) floats above the composer; tapping it scrolls to the newest message and the button disappears. **Exercised** (`transcript-anchor.yaml`).
 - `history-empty`: a computer whose history is empty shows `No sessions yet`. **Exercised** (second run's server with `HOME=<SCRATCH>`).
 
 ## How to get to it (user POV)
@@ -39,6 +41,14 @@ Preconditions: app paired to this run's server.
   ```
 
   Pass: `history-02-transcript` shows the transcript, `transcript-01-thought-expanded` shows `Thought ▴` with text matching the snapshot's newest thinking block, and `transcript-02-older-page` shows `<older title>`, which exists only in the older page.
+- **Anchored expansion and jump button:** from the same snapshot pick a finished tool card whose output is taller than the screen (about 2,000+ characters) as `<tool title>`, reopen the session, and run:
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history-anchor -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/anchor -e 'TOOL_TITLE=<escaped tool title>' .omp/skills/verify-omp-mobile/flows/transcript-anchor.yaml
+  ```
+
+  Pass: the card header sits at the same height in `anchor-01-collapsed` and `anchor-02-expanded`, with `INPUT`/`OUTPUT` below it; `anchor-03-header-off-screen` shows only output; `anchor-04-collapsed-in-view` shows the collapsed card at the top of the transcript; `anchor-01` through `anchor-04` show the `Scroll to bottom` button above the composer, and `anchor-05-newest` shows the newest message without it.
 - **Search and project filter:** project chips come from `GET /v1/projects/recent`, which only lists projects inside the server's `roots`; `prepare-run.sh` confines roots to the run's `WORK`, so for real history set the run's `config.json` `roots` to `["$HOME"]` and restart the server before this recipe (only read-only GETs follow). Pick values from the server's view and save it:
 
   ```sh
@@ -55,7 +65,7 @@ Preconditions: app paired to this run's server.
 
 - Rows expose one accessibility string: `<title>, <project>, · <age>, <preview>`; select with `"<title>,.*"`. Titles repeat (`Untitled`, e2e prompts), so prefer a unique one.
 - The list is the invoking user's real `~/.omp/agent/sessions`, including sessions other agents are writing right now; their transcripts change while you look. Compare against a snapshot fetched at the same time.
-- The transcript is an inverted list anchored at the bottom: expanding a thought grows it upward out of view. The flow swipes DOWN once to bring it back; Maestro counts the off-screen element as visible, so `scrollUntilVisible` alone never moves it.
+- Expanding a thought or tool card keeps its header where it was tapped and opens the content below it. Collapsing a card whose header has scrolled off the top brings the collapsed card back to the top of the screen. Maestro counts off-screen elements as visible, so prove these positions from screenshots.
 - The expanded thought element reads `brain, Thought ▴, <text>`, so match `(?s).*Thought ▴, .+`, not `.*Thought ▴`.
 - A long final reply can push every thought above the first screen; the flow scrolls up to the newest `Thought ▾` first.
 - On `main` at `3a90835`, the expanded thought renders inside a `rounded-full` pill that becomes a large ellipse across the text (fix in PR #9). Do not treat the ellipse as harness noise.

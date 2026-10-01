@@ -15,11 +15,6 @@ name: transcript-expand-page
 - extendedWaitUntil:
     visible: "(?s).*Thought ▴, .+"
     timeout: 10000
-# The inverted list keeps its bottom anchored, so the expanded text grows upward out of view; a DOWN swipe
-# reveals it. Maestro already counts the off-screen element as visible, so scrollUntilVisible does nothing here.
-- swipe:
-    direction: DOWN
-    duration: 600
 - waitForAnimationToEnd
 - takeScreenshot: transcript-01-thought-expanded
 # The transcript is an inverted list: older history is above. The app requests the next 40 items when the
