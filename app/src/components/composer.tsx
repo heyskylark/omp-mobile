@@ -19,6 +19,7 @@ import { pickFromLibrary, prepareImage, type PickedImage } from "../data/attachm
 import { displayOffset, displayText, editDraft, skillSegments } from "../data/skill-draft";
 import { completeSkill, rankSkills, skillToken } from "../data/skills";
 import type { PastedImage } from "../native/types";
+import { ComposerMenuButton } from "./composer-menu";
 import { ModelRoleButton } from "./model-role-picker";
 import { SkillMenu } from "./skill-menu";
 import { SkillSegmentsText } from "./skill-text";
@@ -114,8 +115,6 @@ function ActionButton({
 	);
 }
 
-const USAGE_COMMAND = "/usage";
-
 export function Composer({
 	machineId,
 	value,
@@ -170,17 +169,14 @@ export function Composer({
 		hadText.current = Boolean(value);
 	}, [value]);
 	const keyboardVisible = useKeyboardVisible();
-	// The open slider anchors to the panel, so the panel holds its shape until it closes.
-	const [pickerOpen, setPickerOpen] = useState(false);
+	// An open overlay (role slider, `+` menu) anchors to the panel, so the panel keeps its shape until it closes.
+	const [heldCompact, setHeldCompact] = useState<boolean | null>(null);
 	const hasContent = Boolean(value.trim()) || images.length > 0;
-	const usageCommand = value.trim() === USAGE_COMMAND;
-	const send = () => {
-		if (!usageCommand) return onSend();
-		onChangeText("");
+	const openUsage = () => {
 		Keyboard.dismiss();
 		router.push({ pathname: "/machine/[machineId]/usage", params: { machineId } });
 	};
-	const compact = !keyboardVisible && !value && !images.length && !pickerOpen;
+	const compact = heldCompact ?? (!keyboardVisible && !value && !images.length);
 	const known = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const segments = useMemo(() => skillSegments(value, known, false), [value, known]);
 	// The field shows chips while `value` keeps `/skill:<name>`, so caret and edits are in shown-text positions.
@@ -213,27 +209,32 @@ export function Composer({
 		changeShownText(completeSkill(shownText, token, name));
 	};
 
-	const attach =
-		images.length < MAX_PROMPT_IMAGES ? (
-			<ActionButton
-				key="attach"
-				label="Attach image"
-				icon="photo.on.rectangle"
-				tone="subtle"
-				disabled={disabled}
-				onPress={onAttach}
+	const menu = (
+		<Animated.View key="menu" entering={BUTTON_IN} exiting={BUTTON_OUT} layout={MORPH}>
+			<ComposerMenuButton
+				anchor={panel}
+				onOpenChange={(open) => setHeldCompact(open ? compact : null)}
+				items={[
+					{
+						label: "Photos",
+						icon: "photo.on.rectangle",
+						disabled: disabled || images.length >= MAX_PROMPT_IMAGES,
+						onSelect: onAttach,
+					},
+					{ label: "Usage", icon: "gauge.with.dots.needle.67percent", onSelect: openUsage },
+				]}
 			/>
-		) : null;
-	const steer = working && !usageCommand;
+		</Animated.View>
+	);
 	const sendOrSteer =
 		!working || hasContent ? (
 			<ActionButton
-				key={steer ? "steer" : "send"}
-				label={steer ? "Steer" : "Send"}
-				icon={steer ? "arrow.turn.down.right" : "arrow.up"}
-				tone={steer ? "steer" : "send"}
-				disabled={!usageCommand && (disabled || !hasContent)}
-				onPress={send}
+				key={working ? "steer" : "send"}
+				label={working ? "Steer" : "Send"}
+				icon={working ? "arrow.turn.down.right" : "arrow.up"}
+				tone={working ? "steer" : "send"}
+				disabled={disabled || !hasContent}
+				onPress={onSend}
 			/>
 		) : null;
 	const stop = working ? (
@@ -267,7 +268,7 @@ export function Composer({
 							</Animated.View>
 						) : null}
 						<Animated.View layout={MORPH} style={styles.inputRow}>
-							{compact ? attach : null}
+							{compact ? menu : null}
 							<Animated.View layout={MORPH} style={styles.inputSlot}>
 								<TextInput
 									ref={input}
@@ -288,7 +289,7 @@ export function Composer({
 						</Animated.View>
 						{compact ? null : (
 							<Animated.View entering={TOOLBAR_IN} exiting={TOOLBAR_OUT} layout={MORPH} style={styles.toolbar}>
-								{attach}
+								{menu}
 								<View style={styles.spacer} />
 								<Animated.View entering={BUTTON_IN} exiting={BUTTON_OUT} layout={MORPH}>
 									<ModelRoleButton
@@ -296,7 +297,7 @@ export function Composer({
 										onChange={onModelRoleChange}
 										disabled={modelRoleDisabled}
 										anchor={panel}
-										onOpenChange={setPickerOpen}
+										onOpenChange={(open) => setHeldCompact(open ? compact : null)}
 									/>
 								</Animated.View>
 								{sendOrSteer}
