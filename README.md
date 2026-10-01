@@ -30,6 +30,7 @@ The menu bar screenshots use sample data.
 - **Skills.** Type `/skill:` (or just `/`) in the message field to list the skills OMP offers in the session's project: your user-level skills, the project's `.omp/skills`, and skills from installed plugins. Keep typing to fuzzy-filter by name (`vom` finds `verify-omp-mobile`) or by a word from the description; tap a skill to complete it and add your request after it. The computer asks OMP for the list, so it matches what `/skill:` accepts in the terminal; it caches each project's list for 30 seconds, and the app loads it when you open a session or pick a project. As in OMP's terminal, a completed command naming a known skill shows as a gold `✦ <name>` chip in the message field and in your sent messages, while OMP still receives `/skill:<name>`. Backspace removes a chip whole. The transcript shows the command you typed rather than the skill's full text.
 - **Usage.** Tap **+** next to any message field and choose **Usage** to see the subscription limits of every provider account signed in to OMP on the computer, as OMP's own `/usage` shows them. Each limit shows the share used and when it resets. Close the sheet with the **Close** button at the top left, or swipe it down. The computer runs `omp usage --json`, so the numbers can be a few minutes old while OMP serves them from its cache.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
+- **Your browser.** When an OMP agent uses your own Chrome through the OMP Browser Relay, tap the Safari button in the session header, or **Open browser** on a question, to watch the tab it works in. Tap **Take control** to tap, scroll, and type in the tab yourself, for example to sign in when the agent asks you to, then tap **Hand back**. See [Let agents use your Chrome](#let-agents-use-your-chrome).
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.
 - **A menu bar icon** on the Mac that shows the server's status and opens a QR code to pair a phone.
@@ -118,6 +119,7 @@ To uninstall, run `scripts/uninstall.sh`. It removes the LaunchAgent, the extens
 | `ompPath` | `omp` on `PATH` | Path to the OMP executable. |
 | `rpcArgs` | none | Extra arguments for server-started sessions, for example `["--model", "openai-codex/gpt-5.6-terra:medium"]`. |
 | `apns` | none | Push notification settings. See [Turn on push notifications](#turn-on-push-notifications). |
+| `browserRelayUrl` | `http://127.0.0.1:9224` | Address of the OMP Browser Relay. Only loopback addresses are accepted. |
 
 Restart the server after you change the file: choose **Restart server** in the menu bar, or run `launchctl kickstart -k gui/$(id -u)/com.heyskylark.omp-mobile.server`.
 
@@ -129,6 +131,34 @@ Restart the server after you change the file: choose **Restart server** in the m
 A pairing code works once and expires after 10 minutes. After a phone uses it, the Mac confirms which device connected; choose **New code** to connect another device. You can also copy the pairing link on the Mac and paste it into the app. Pairing the same app install again replaces its previous registration on that computer. Remove a phone from the menu bar under **Paired devices**.
 
 To rename a computer, open it in the app, tap the **…** button, edit **Name**, and tap **Save**. The server saves the name to `machineName` in `~/.omp-mobile/config.json` and uses it right away. Other paired phones pick it up the next time they load the Computers list.
+
+## Let agents use your Chrome
+
+OMP agents can drive your everyday Chrome, with the sites you are already signed in to, through the OMP Browser Relay that ships with OMP. The app then shows the tab the agent works in and lets you take it over.
+
+1. Write the relay's Chrome extension to disk.
+
+   ```sh
+   omp browser-relay install
+   ```
+
+2. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select `~/.omp/browser-relay/extension`.
+3. Make OMP agents use your Chrome instead of their own browser.
+
+   ```sh
+   omp config set browser.relay true
+   ```
+
+OMP starts the relay the first time an agent uses the browser. To use the browser from the app before that, run `omp browser-relay` on the computer.
+
+The Safari button appears in a session's header while the relay runs. The browser screen lists Chrome's tabs and shows the one with the most recent activity first. Tap the tab name to pick another one. Pinch to zoom.
+
+- **Watching** never changes anything in Chrome. Chrome draws only the tab in front, so a tab in the background shows a still picture that refreshes every few seconds. Tap **Bring to front** to see it live.
+- **Take control** brings the tab to the front on the computer and sends your taps, drags, and typing to it. Tap the keyboard button to type. Only one phone controls a tab at a time. Taking control from another phone asks first.
+- The agent is not paused while you are in control. To sign in for the agent, let it ask you first: it waits on the question, you sign in from the browser screen, close it, and answer the question.
+- No Chrome on a Mac draws anything while its screen is locked or asleep. The browser screen then says **Chrome isn't drawing**, or keeps the last picture with a note that it is not updating. Taps and typing still reach the page, but you cannot see them. The picture comes back when the screen is unlocked. To use the browser while you are away, keep the computer's screen awake and unlocked.
+
+Anything that controls the relay can act on every site you are signed in to. The server connects to the relay only on the computer's loopback address and only while a paired phone has the browser screen open.
 
 ## Get the app on your iPhone with TestFlight
 
@@ -279,4 +309,5 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - In a session the server runs, an `ask` call with several questions cannot finish a multiple-choice question from the phone. OMP's RPC mode offers no **Done** option there and expects the terminal's → key to move on, which RPC cannot send. Tapping options only toggles them; answer with **Other…** to continue. Sessions driven through Collab offer **Next →** and are not affected.
 - OMP does not forward images with a `/skill:` prompt, so images attached to one are dropped. Send them in a separate message.
 - OMP reports a task agent's description and current activity only while the agent runs, and the server keeps them in memory. After the server restarts, finished agents show no description, and an agent that is still running shows as **Interrupted** until OMP reports its progress again, within a few seconds.
+- The browser screen shows nothing new while the computer's screen is locked or asleep, because Chrome stops drawing. Agents' own browser screenshots fail then too.
 - There is no Apple Watch app yet.
