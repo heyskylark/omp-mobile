@@ -1,6 +1,7 @@
-# Sends `/usage` from New session and closes the sheet with its top-left Close button. On a run's first pass no
-# project is picked yet, so this also proves `/usage` bypasses the otherwise disabled Send. Then starts a session (one
-# small model turn), sends `/usage` from its composer, and swipes the sheet down. Rows read "<label>, <N>% used".
+# Opens the composer's + menu on New session, picks Usage, and closes the sheet with its top-left Close button. On a
+# run's first pass no project is picked yet, so this also proves Usage works before Send is possible. Then starts a
+# session (one small model turn), opens Usage from its composer's menu, and swipes the sheet down. Rows read
+# "<label>, <N>% used".
 # env: MACHINE_NAME, PROMPT
 appId: com.heyskylark.ompmobile
 name: usage
@@ -15,9 +16,14 @@ name: usage
     visible: "New session"
     timeout: 15000
 - tapOn: "Message OMP"
-- inputText: "/usage"
-- takeScreenshot: usage-01-typed
-- tapOn: "Send"
+- tapOn: "Composer menu"
+- extendedWaitUntil:
+    visible: "Usage"
+    timeout: 5000
+- assertVisible: "Photos"
+- waitForAnimationToEnd
+- takeScreenshot: usage-01-menu
+- tapOn: "Usage"
 - extendedWaitUntil:
     visible: ".*, \\d+% used"
     timeout: 30000
@@ -29,7 +35,6 @@ name: usage
     notVisible: "Close"
     timeout: 10000
 - assertVisible: "New session"
-- assertNotVisible: "/usage"
 - takeScreenshot: usage-03-closed
 - tapOn: ".*Browse.*"
 - extendedWaitUntil:
@@ -49,9 +54,8 @@ name: usage
 - extendedWaitUntil:
     visible: "Send"
     timeout: 180000
-- tapOn: "Message OMP"
-- inputText: "/usage"
-- tapOn: "Send"
+- tapOn: "Composer menu"
+- tapOn: "Usage"
 - extendedWaitUntil:
     visible: ".*, \\d+% used"
     timeout: 30000
@@ -65,5 +69,4 @@ name: usage
     notVisible: "Close"
     timeout: 10000
 - assertVisible: "Session menu"
-- assertNotVisible: "/usage"
 - takeScreenshot: usage-05-swiped-down
