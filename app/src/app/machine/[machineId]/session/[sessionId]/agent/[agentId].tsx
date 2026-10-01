@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
-import { FlatList, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import type { AgentSummary, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../../components/agent-menu";
+import { ChatList } from "../../../../../../components/chat-list";
 import { TimelineRow } from "../../../../../../components/timeline";
 import { ErrorState, Loading } from "../../../../../../components/ui";
 import { agentThreadReducer, type AgentThreadState } from "../../../../../../data/agent-reducer";
@@ -103,8 +104,7 @@ export default function AgentScreen() {
 	const newestFirst = [...view.items].reverse();
 	return (
 		<View className="flex-1 bg-ink">
-			<FlatList
-				inverted
+			<ChatList
 				data={newestFirst}
 				extraData={agentsById}
 				keyExtractor={(item) => item.id}

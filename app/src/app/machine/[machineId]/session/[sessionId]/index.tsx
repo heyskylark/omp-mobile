@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useHeaderHeight } from "@react-navigation/elements";
 import * as Haptics from "expo-haptics";
-import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
+import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
+import { ChatList } from "../../../../../components/chat-list";
 import { Composer, useImageAttachments } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../../components/session-meta";
@@ -33,7 +34,6 @@ export default function SessionScreen() {
 	const [responding, setResponding] = useState(false);
 	const [changingRole, setChangingRole] = useState(false);
 	const attachments = useImageAttachments();
-	const list = useRef<FlatList<TimelineItem>>(null);
 	const skills = useSkills(machine, view.kind === "ready" ? view.session.project.path : undefined);
 	const skillNames = useMemo(() => new Set(skills.map((skill) => skill.name)), [skills]);
 	const agents = view.kind === "ready" ? view.agents : NO_AGENTS;
@@ -205,9 +205,7 @@ export default function SessionScreen() {
 			keyboardVerticalOffset={headerHeight}
 			className="flex-1 bg-ink"
 		>
-			<FlatList
-				ref={list}
-				inverted
+			<ChatList
 				data={newestFirst}
 				extraData={[skillNames, agentsById]}
 				keyExtractor={(item) => item.id}

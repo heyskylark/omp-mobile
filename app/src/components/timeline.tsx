@@ -1,10 +1,11 @@
 import type { AgentSummary, Block, TimelineItem } from "@omp-mobile/protocol";
-import { useState, Fragment } from "react";
+import { Fragment } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useMarkdown } from "react-native-marked";
 import { agentName, statusLabel, toolIsWorking } from "../data/agents";
 import { skillSegments } from "../data/skill-draft";
 import { AgentStatusIcon } from "./agent-menu";
+import { useAnchoredToggle } from "./chat-list";
 import { SkillSegmentsText } from "./skill-text";
 import { Icon } from "./ui";
 
@@ -37,10 +38,11 @@ function MarkdownText({ value }: { value: string }) {
 }
 
 function Thinking({ block }: { block: Extract<Block, { kind: "thinking" }> }) {
-	const [expanded, setExpanded] = useState(false);
+	const { ref, expanded, toggle } = useAnchoredToggle();
 	return (
 		<Pressable
-			onPress={() => setExpanded((value) => !value)}
+			ref={ref}
+			onPress={toggle}
 			className={`mb-2 self-start border border-border bg-surface px-3 py-1.5 ${expanded ? "rounded-card" : "rounded-full"}`}
 		>
 			<View className="flex-row items-center gap-2">
@@ -89,14 +91,13 @@ function ToolCard({
 	agents = NO_AGENTS,
 	onOpenAgent,
 }: { item: Extract<TimelineItem, { kind: "tool" }> } & AgentProps) {
-	const [expanded, setExpanded] = useState(false);
+	const { ref, expanded, toggle } = useAnchoredToggle();
 	const working = toolIsWorking(item, agents);
 	const stateIcon = item.state === "failed" ? "xmark.circle.fill" : "checkmark.circle.fill";
 	const stateColor = item.state === "failed" ? "#F85149" : "#3FB950";
-	const toggle = () => setExpanded((value) => !value);
 	// Chips sit outside the card's pressables: iOS folds a pressable's children into one accessibility element.
 	return (
-		<View className="rounded-card border border-border bg-surface px-4 py-3">
+		<View ref={ref} className="rounded-card border border-border bg-surface px-4 py-3">
 			<Pressable onPress={toggle} className="flex-row items-center gap-3">
 				<View className="h-8 w-8 items-center justify-center rounded-lg bg-surface-raised">
 					<Icon name="wrench.and.screwdriver" size={15} color="#9A9AA2" />
