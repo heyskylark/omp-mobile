@@ -252,6 +252,41 @@ export interface SkillListResponse {
 	skills: SkillCommand[];
 }
 
+/** How close a usage limit is to running out, as OMP judges it. */
+export type UsageStatus = "ok" | "warning" | "exhausted" | "unknown";
+
+/** One limit window of a provider account, such as Claude's 5-hour or Codex's weekly limit. */
+export interface UsageLimit {
+	id: string;
+	label: string;
+	/** Share of the limit used: 0 to 1, above 1 past the limit. Absent when the provider reported no amount. */
+	usedFraction?: number;
+	/** Epoch milliseconds when the window resets. */
+	resetsAt?: number;
+	status: UsageStatus;
+}
+
+/** The limits OMP reports for one signed-in provider account. */
+export interface UsageAccount {
+	/** OMP provider id, such as `anthropic` or `openai-codex`. */
+	provider: string;
+	/** Email or account id the provider reported. */
+	account?: string;
+	/** Organization of the account; tells apart subscriptions that share one login. */
+	org?: string;
+	plan?: string;
+	/** Saved limit resets the account can still redeem. */
+	savedResets?: number;
+	limits: UsageLimit[];
+}
+
+/** Response of `GET /v1/usage`: what `omp usage` reports for every account signed in on the computer. */
+export interface UsageResponse {
+	/** Epoch milliseconds of the oldest report; OMP serves cached reports for a short while. */
+	fetchedAt: number;
+	accounts: UsageAccount[];
+}
+
 export interface RespondRequest {
 	operationId: string;
 	response: InteractionResponse;

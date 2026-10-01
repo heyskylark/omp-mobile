@@ -354,6 +354,7 @@ export function createHttpHandler(
 				const skills = await options.hub.skills(await options.history.resolveProjectDir(cwd));
 				return json({ skills } satisfies SkillListResponse);
 			}
+			if (path === "/v1/usage" && req.method === "GET") return json(await options.hub.usage());
 			const agentMatch = path.match(/^\/v1\/sessions\/([^/]+)\/agents\/([^/]+)(\/items)?$/);
 			if (agentMatch && req.method === "GET") {
 				const sessionId = parsePathParam(agentMatch[1]!);
@@ -478,6 +479,8 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 		return Bun.serve<SocketData>({
 			hostname,
 			port: options.config.port,
+			// Bun drops a request after 10 idle seconds by default; `omp usage` and the skills probe may take 20.
+			idleTimeout: 30,
 			websocket,
 			async fetch(req, server) {
 				const url = new URL(req.url);

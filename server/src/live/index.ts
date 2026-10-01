@@ -14,6 +14,7 @@ import { SessionActor } from "./actor.ts";
 import type { AgentReport, CreateLiveHub, ExtensionEvent, LiveHub, LiveNotification, LiveOptions } from "./api.ts";
 import { startLocalRelay, type LocalRelay } from "./relay.ts";
 import { SkillCatalog } from "./skills.ts";
+import { readUsage } from "./usage.ts";
 
 class Hub implements LiveHub {
 	#opts: LiveOptions;
@@ -222,6 +223,9 @@ class Hub implements LiveHub {
 	}
 	skills(cwd: string) {
 		return this.#skills.list(cwd);
+	}
+	usage() {
+		return readUsage(this.#opts.ompPath);
 	}
 	status() {
 		let server = 0,

@@ -118,6 +118,7 @@ export default function NewSessionScreen() {
 			) : null}
 			<View className="px-4 pb-4">
 				<Composer
+					machineId={machineId}
 					value={prompt}
 					onChangeText={setPrompt}
 					onSend={() => void create()}

@@ -19,12 +19,15 @@ import type {
 	SkillCommand,
 	SkillListResponse,
 	TimelinePage,
+	UsageResponse,
 } from "@omp-mobile/protocol";
 import type { PairedMachine } from "../native/types";
 
 const REQUEST_TIMEOUT_MS = 12_000;
 // Image uploads can be a few MB over a phone connection.
 const UPLOAD_TIMEOUT_MS = 60_000;
+// The server allows `omp usage` 20 seconds to query every signed-in provider.
+const USAGE_TIMEOUT_MS = 25_000;
 
 type JsonObject = Record<string, unknown>;
 
@@ -216,6 +219,15 @@ export class OmpApi {
 			`/v1/skills?cwd=${encodeURIComponent(cwd)}`,
 			{ method: "GET" },
 			(value) => typed<SkillListResponse>("skills", ["skills"])(value).skills,
+		);
+	}
+
+	usage() {
+		return this.request(
+			"/v1/usage",
+			{ method: "GET" },
+			typed<UsageResponse>("usage", ["fetchedAt", "accounts"]),
+			USAGE_TIMEOUT_MS,
 		);
 	}
 
