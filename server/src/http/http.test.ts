@@ -89,6 +89,9 @@ class FakeHub implements LiveHub {
 	async skills() {
 		return [];
 	}
+	async usage() {
+		return { fetchedAt: 0, accounts: [] };
+	}
 	status() {
 		return { server: 0, terminal: 0, pending: 0, collabRelayUrl: "ws://127.0.0.1:8788", problems: [] };
 	}

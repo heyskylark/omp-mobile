@@ -13,6 +13,7 @@ import type {
 	SessionSummary,
 	SkillCommand,
 	TimelinePage,
+	UsageResponse,
 } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
 import type { AgentSignal } from "./agents.ts";
@@ -108,6 +109,7 @@ export interface LiveHub {
 	onNotify(listener: (n: LiveNotification) => void): () => void;
 	/** The `/skill:<name>` commands OMP offers in `cwd`, an already validated project directory. */
 	skills(cwd: string): Promise<SkillCommand[]>;
+	usage(): Promise<UsageResponse>;
 	status(): LiveStatus;
 }
 
