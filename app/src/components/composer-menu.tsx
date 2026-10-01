@@ -127,7 +127,8 @@ function ComposerMenu({
 					placed ? null : styles.hidden,
 				]}
 			>
-				<BlurView tint="dark" intensity={60} style={StyleSheet.absoluteFill} />
+				<BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
+				<View style={[StyleSheet.absoluteFill, styles.tint]} />
 				{items.map((item) => (
 					<Pressable
 						key={item.label}
@@ -162,9 +163,10 @@ const styles = StyleSheet.create({
 		overflow: "hidden",
 		borderWidth: StyleSheet.hairlineWidth,
 		borderColor: "rgba(255, 255, 255, 0.16)",
-		backgroundColor: "rgba(27, 27, 30, 0.82)",
 		transformOrigin: "left bottom",
 	},
+	// The blur must see the transcript, so the tint sits above it instead of being the menu's own background.
+	tint: { backgroundColor: "rgba(30, 30, 33, 0.5)" },
 	iconWell: {
 		width: 44,
 		height: 44,

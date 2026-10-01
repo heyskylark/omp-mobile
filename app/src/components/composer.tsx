@@ -1,4 +1,5 @@
 import { MAX_PROMPT_IMAGES, type ModelRole, type SkillCommand } from "@omp-mobile/protocol";
+import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
 import { router } from "expo-router";
@@ -40,10 +41,21 @@ const TONES = {
 	stop: { className: "bg-danger", color: "#ECECEE" },
 };
 
-/** Composer attachment state shared by the screens that send prompts. */
-export function useImageAttachments() {
+type Draft = { text: string; images: PickedImage[] };
+
+/** Unsent text and images by draft key, kept while the app runs so leaving a screen does not lose them. */
+const drafts = new Map<string, Draft>();
+
+/** A composer's text and images, restored from and saved to the in-memory draft for `key`. */
+export function useComposerDraft(key: string) {
 	const { show } = useToast();
-	const [images, setImages] = useState<PickedImage[]>([]);
+	const [saved] = useState(() => drafts.get(key));
+	const [text, setText] = useState(saved?.text ?? "");
+	const [images, setImages] = useState<PickedImage[]>(saved?.images ?? []);
+	useEffect(() => {
+		if (text || images.length) drafts.set(key, { text, images });
+		else drafts.delete(key);
+	}, [key, text, images]);
 	const add = async (load: () => Promise<PickedImage[]>) => {
 		try {
 			const added = await load();
@@ -53,8 +65,16 @@ export function useImageAttachments() {
 		}
 	};
 	return {
+		text,
+		setText,
 		images,
 		setImages,
+		/** Empties the draft now, for screens that unmount right after sending. */
+		clear: () => {
+			drafts.delete(key);
+			setText("");
+			setImages([]);
+		},
 		attach: () => void add(() => pickFromLibrary(MAX_PROMPT_IMAGES - images.length)),
 		paste: (pasted: PastedImage[]) => void add(() => Promise.all(pasted.map(prepareImage))),
 		remove: (index: number) => setImages((current) => current.filter((_, i) => i !== index)),
@@ -131,6 +151,7 @@ export function Composer({
 	onModelRoleChange,
 	modelRoleDisabled,
 	skills = [],
+	onInputNativeIDChange,
 }: {
 	machineId: string;
 	value: string;
@@ -148,6 +169,8 @@ export function Composer({
 	modelRoleDisabled?: boolean;
 	/** Skills offered after `/skill:`; none hides the completion menu. */
 	skills?: readonly SkillCommand[];
+	/** Reports the text field's current `nativeID`, which a `KeyboardGestureArea` needs to extend its swipe area. */
+	onInputNativeIDChange?(nativeID: string): void;
 }) {
 	const input = useRef<TextInput>(null);
 	const panel = useRef<View>(null);
@@ -168,6 +191,8 @@ export function Composer({
 		if (!value && hadText.current) setClears((count) => count + 1);
 		hadText.current = Boolean(value);
 	}, [value]);
+	const inputNativeID = `composer-input-${clears}`;
+	useEffect(() => onInputNativeIDChange?.(inputNativeID), [inputNativeID, onInputNativeIDChange]);
 	const keyboardVisible = useKeyboardVisible();
 	// An open overlay (role slider, `+` menu) anchors to the panel, so the panel keeps its shape until it closes.
 	const [heldCompact, setHeldCompact] = useState<boolean | null>(null);
@@ -248,6 +273,8 @@ export function Composer({
 				{matches.length ? <SkillMenu skills={matches} onPick={pickSkill} /> : null}
 				<View ref={panel} collapsable={false}>
 					<Animated.View layout={MORPH} style={[styles.shell, compact ? styles.pill : styles.panel]}>
+						<BlurView tint="dark" intensity={40} style={StyleSheet.absoluteFill} />
+						<View style={[StyleSheet.absoluteFill, styles.tint]} />
 						{images.length ? (
 							<Animated.View entering={FadeIn.springify()} exiting={FadeOut.duration(120)} layout={MORPH}>
 								<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 pt-1">
@@ -274,7 +301,7 @@ export function Composer({
 									ref={input}
 									onChangeText={changeShownText}
 									onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-									nativeID={`composer-input-${clears}`}
+									nativeID={inputNativeID}
 									placeholder="Message OMP"
 									placeholderTextColor="#6F6F77"
 									multiline
@@ -312,7 +339,14 @@ export function Composer({
 }
 
 const styles = StyleSheet.create({
-	shell: { borderRadius: 25, borderWidth: 1, borderColor: "#2A2A2E", backgroundColor: "#141416" },
+	shell: {
+		borderRadius: 25,
+		borderWidth: StyleSheet.hairlineWidth,
+		borderColor: "rgba(255, 255, 255, 0.16)",
+		overflow: "hidden",
+	},
+	// Mostly opaque, so the transcript shows through the blur only faintly.
+	tint: { backgroundColor: "rgba(24, 24, 27, 0.6)" },
 	pill: { padding: 6 },
 	panel: { padding: 8, gap: 6 },
 	inputRow: { flexDirection: "row", alignItems: "center", gap: 4 },

@@ -55,8 +55,12 @@ name: model-role
 - extendedWaitUntil:
     visible: "Send"
     timeout: 180000
-# The session screen's composer collapses once the keyboard closes on an empty field.
-- hideKeyboard
+# The session screen's composer collapses once the keyboard closes on an empty field. Only a drag that reaches
+# the composer closes the keyboard; scrolling the transcript and Maestro's hideKeyboard leave it open.
+- swipe:
+    start: 50%, 30%
+    end: 50%, 97%
+    duration: 1500
 - extendedWaitUntil:
     notVisible: "Model: .*"
     timeout: 10000
