@@ -64,6 +64,10 @@ export default function RootLayout() {
 						<Stack.Screen name="machine/[machineId]/session/[sessionId]/agent/[agentId]" options={{ title: "Agent" }} />
 						<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
 						<Stack.Screen name="machine/[machineId]/usage" options={{ title: "Usage", presentation: "modal" }} />
+						<Stack.Screen
+							name="machine/[machineId]/browser"
+							options={{ title: "Browser", presentation: "fullScreenModal" }}
+						/>
 					</Stack>
 				</OverlayProvider>
 			</ToastProvider>

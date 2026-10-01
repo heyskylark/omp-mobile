@@ -1,16 +1,19 @@
 import type { InteractionResponse, PendingInteraction } from "@omp-mobile/protocol";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { PrimaryButton, Surface } from "./ui";
+import { Icon, PrimaryButton, Surface } from "./ui";
 
 export function InteractionPanel({
 	interaction,
 	busy,
 	respond,
+	onOpenBrowser,
 }: {
 	interaction: PendingInteraction;
 	busy: boolean;
 	respond(response: InteractionResponse): void;
+	/** Shown on questions and text prompts, which is where an agent asks the user to act in the browser. */
+	onOpenBrowser?(): void;
 }) {
 	const [other, setOther] = useState("");
 	if (interaction.kind === "approval") {
@@ -31,7 +34,21 @@ export function InteractionPanel({
 	}
 	return (
 		<Surface className="gap-3">
-			<Text className="text-[16px] font-semibold text-primary">{interaction.title}</Text>
+			<View className="flex-row items-start gap-3">
+				<Text className="flex-1 text-[16px] font-semibold text-primary">{interaction.title}</Text>
+				{onOpenBrowser ? (
+					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel="Open browser"
+						hitSlop={6}
+						onPress={onOpenBrowser}
+						className="flex-row items-center gap-1.5 rounded-full border border-border bg-surface-raised px-3 py-1.5 active:opacity-70"
+					>
+						<Icon name="safari" color="#9A9AA2" size={14} />
+						<Text className="text-[13px] text-primary">Open browser</Text>
+					</Pressable>
+				) : null}
+			</View>
 			{interaction.kind === "question" ? (
 				<View className="flex-row flex-wrap gap-2">
 					{interaction.options.map((option) => (

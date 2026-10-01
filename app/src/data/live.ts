@@ -6,11 +6,18 @@ type Listener = (message: ServerMessage) => void;
 type ResyncListener = () => void;
 
 /** Heartbeat period while the app is active; a socket that stays silent past `STALE_MS` is treated as dead. */
-const PING_MS = 15_000;
-const STALE_MS = 35_000;
+export const PING_MS = 15_000;
+export const STALE_MS = 35_000;
 
 interface AuthorizedWebSocketConstructor {
 	new (url: string, protocols: string[] | undefined, options: { headers: Record<string, string> }): WebSocket;
+}
+
+/** Opens a WebSocket to a path on the paired computer, authenticated with the device token. */
+export function openMachineSocket(machine: Pick<PairedMachine, "url" | "token">, path: string): WebSocket {
+	const wsUrl = machine.url.replace(/^http/, "ws").replace(/\/$/, "") + path;
+	const AuthorizedWebSocket = WebSocket as unknown as AuthorizedWebSocketConstructor;
+	return new AuthorizedWebSocket(wsUrl, undefined, { headers: { Authorization: `Bearer ${machine.token}` } });
 }
 
 function parseMessage(raw: unknown): ServerMessage | null {
@@ -149,11 +156,7 @@ class MachineSocket {
 
 	private connect() {
 		if (this.stopped || this.background || this.socket) return;
-		const wsUrl = this.machine.url.replace(/^http/, "ws").replace(/\/$/, "") + "/v1/stream";
-		const AuthorizedWebSocket = WebSocket as unknown as AuthorizedWebSocketConstructor;
-		const socket = new AuthorizedWebSocket(wsUrl, undefined, {
-			headers: { Authorization: `Bearer ${this.machine.token}` },
-		});
+		const socket = openMachineSocket(this.machine, "/v1/stream");
 		this.socket = socket;
 		socket.onopen = () => {
 			this.retry = 0;

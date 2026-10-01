@@ -37,6 +37,7 @@ export default function SessionScreen() {
 	const [sending, setSending] = useState(false);
 	const [responding, setResponding] = useState(false);
 	const [changingRole, setChangingRole] = useState(false);
+	const [browserAvailable, setBrowserAvailable] = useState(false);
 	// The composer floats over the transcript and rides the keyboard, following it during an interactive dismiss.
 	const keyboard = useReanimatedKeyboardAnimation();
 	const restingBottom = Math.max(insets.bottom, KEYBOARD_GAP);
@@ -60,6 +61,10 @@ export default function SessionScreen() {
 			}),
 		[machineId, sessionId],
 	);
+	const openBrowser = useCallback(
+		() => router.push({ pathname: "/machine/[machineId]/browser", params: { machineId } }),
+		[machineId],
+	);
 	const loadSnapshot = useCallback(async () => {
 		if (!api) return;
 		try {
@@ -68,22 +73,38 @@ export default function SessionScreen() {
 			dispatch({ type: "error", message: error instanceof Error ? error.message : "Could not load this session." });
 		}
 	}, [api, sessionId]);
+	// The browser button is optional chrome: a failed check just hides it.
+	const loadBrowserStatus = useCallback(async () => {
+		if (!api) return;
+		try {
+			const { availability } = await api.browserStatus();
+			setBrowserAvailable(availability.kind !== "relay_offline");
+		} catch {
+			setBrowserAvailable(false);
+		}
+	}, [api]);
 	useEffect(() => {
 		void loadSnapshot();
 	}, [loadSnapshot]);
+	useEffect(() => {
+		void loadBrowserStatus();
+	}, [loadBrowserStatus]);
 	useEffect(() => {
 		if (!machine) return;
 		const { socket, release } = acquireMachineSocket(machine);
 		const unsubscribe = socket.subscribe(sessionId);
 		const offMessage = socket.onMessage((message: ServerMessage) => dispatch({ type: "server", message }));
-		const offResync = socket.onResync(() => void loadSnapshot());
+		const offResync = socket.onResync(() => {
+			void loadSnapshot();
+			void loadBrowserStatus();
+		});
 		return () => {
 			unsubscribe();
 			offMessage();
 			offResync();
 			release();
 		};
-	}, [machine, sessionId, loadSnapshot]);
+	}, [machine, sessionId, loadSnapshot, loadBrowserStatus]);
 
 	const handoff = useCallback(() => {
 		if (!api) return;
@@ -123,9 +144,14 @@ export default function SessionScreen() {
 			),
 			// An empty headerRight still draws an empty button background.
 			headerRight:
-				view.agents.length || view.session.liveness.kind === "server"
+				view.agents.length || view.session.liveness.kind === "server" || browserAvailable
 					? () => (
 							<View className="flex-row items-center gap-3">
+								{browserAvailable ? (
+									<Pressable accessibilityRole="button" accessibilityLabel="Browser" hitSlop={6} onPress={openBrowser}>
+										<Icon name="safari" color="#9A9AA2" size={21} />
+									</Pressable>
+								) : null}
 								<AgentsButton agents={view.agents} onOpen={openAgent} />
 								{view.session.liveness.kind === "server" ? (
 									<Pressable accessibilityLabel="Session menu" onPress={handoff}>
@@ -136,7 +162,7 @@ export default function SessionScreen() {
 						)
 					: undefined,
 		});
-	}, [view, navigation, handoff, openAgent]);
+	}, [view, navigation, handoff, openAgent, browserAvailable, openBrowser]);
 	if (!machine || !api) return <ErrorState message="This computer is no longer paired." />;
 	if (view.kind === "loading") return <Loading label="Loading session…" />;
 	if (view.kind === "error") return <ErrorState message={view.message} retry={() => void loadSnapshot()} />;
@@ -257,6 +283,7 @@ export default function SessionScreen() {
 						interaction={view.pending[0]}
 						busy={responding}
 						respond={(response) => void respond(view.pending[0].id, response)}
+						onOpenBrowser={browserAvailable ? openBrowser : undefined}
 					/>
 				) : null}
 				<Composer
