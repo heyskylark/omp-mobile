@@ -1,0 +1,48 @@
+# Opens the browser screen from a session header against bin/fake-browser-relay.ts, takes control, taps the
+# middle of the frame, types, erases a character, presses the Tab key button, hands back, and opens the tab
+# picker. The relay's CMD lines are the proof that each input arrived (features/browser.md).
+# env: MACHINE_NAME, SESSION (regex for a session row in this computer's list)
+appId: com.heyskylark.ompmobile
+name: browser-control
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: ${SESSION}
+    timeout: 15000
+- tapOn: ${SESSION}
+- extendedWaitUntil:
+    visible: "Browser"
+    timeout: 30000
+- tapOn: "Browser"
+# Primary buttons read as "<SF Symbol>, <title>".
+- extendedWaitUntil:
+    visible: ".*, Take control"
+    timeout: 30000
+- takeScreenshot: control-01-watching
+- tapOn: ".*, Take control"
+- extendedWaitUntil:
+    visible: ".*, Hand back"
+    timeout: 15000
+- takeScreenshot: control-02-in-control
+- tapOn: "Browser tab"
+- tapOn: "Keyboard"
+- inputText: "hello"
+- eraseText: 1
+- tapOn: "Tab key"
+- takeScreenshot: control-03-typing
+- tapOn: "Keyboard"
+- tapOn: ".*, Hand back"
+- extendedWaitUntil:
+    visible: ".*, Take control"
+    timeout: 15000
+- takeScreenshot: control-04-handed-back
+- tapOn: "Tabs"
+- extendedWaitUntil:
+    visible: "Fake sign-in page, example\\.com"
+    timeout: 10000
+- takeScreenshot: control-05-picker
+- tapOn: "Close"

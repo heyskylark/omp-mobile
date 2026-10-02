@@ -133,6 +133,7 @@ All in `.omp/skills/verify-omp-mobile/bin/`, executable, invoked exactly as abov
 | `texts.ts [hierarchy.json]` | compact Maestro hierarchy (stdin or file) |
 | `window-shot.sh <pid> <prefix>` | capture only that process's windows (Screen Recording permission) |
 | `menubar-remove.sh <pid> <device-name>` | click the menu bar panel's `Remove` for one device (Accessibility permission) |
+| `fake-browser-relay.ts [port]` | stand-in OMP Browser Relay with one tab and fixture frames; prints the input it receives (`features/browser.md`) |
 | `cleanup.sh <run-id>` | remove run scratch, simulator, session buckets; keep evidence |
 
 Repository-native commands reused: `scripts/simulator.sh <udid>`, `macos/build.sh`, `bun run e2e` (API-level regression over real OMP on ports 18787/18788; run it too after OMP upgrades).

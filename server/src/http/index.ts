@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
+	BROWSER_KEYS,
 	MAX_MACHINE_NAME_LENGTH,
 	MAX_PROMPT_IMAGES,
 	MODEL_ROLES,
@@ -10,12 +11,16 @@ import {
 	encodePairingUrl,
 	type ApiError,
 	type AdminStatus,
+	type BrowserClientMessage,
+	type BrowserServerMessage,
+	type BrowserStatusResponse,
 	type ClientMessage,
 	type ServerInfo,
 	type ServerMessage,
 	type SessionSummary,
 	type SkillListResponse,
 } from "@omp-mobile/protocol";
+import type { BrowserService, BrowserViewer } from "../browser/index.ts";
 import { saveMachineName, type ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { ProjectPathError } from "../history/directories.ts";
@@ -104,6 +109,24 @@ const ClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("ping") }),
 ]);
 const PathParamSchema = z.string().min(1).max(500);
+const Coordinate = z.number().min(-100_000).max(100_000);
+const BrowserClientMessageSchema = z.discriminatedUnion("type", [
+	z.object({
+		type: z.literal("watch"),
+		tabId: z.string().min(1).max(500),
+		maxWidth: z.number().int().min(1).max(10_000),
+	}),
+	z.object({ type: z.literal("unwatch") }),
+	z.object({ type: z.literal("frame.ack"), seq: z.number().int().nonnegative() }),
+	z.object({ type: z.literal("tab.activate") }),
+	z.object({ type: z.literal("control.take") }),
+	z.object({ type: z.literal("control.release") }),
+	z.object({ type: z.literal("input.tap"), x: Coordinate, y: Coordinate }),
+	z.object({ type: z.literal("input.scroll"), x: Coordinate, y: Coordinate, dx: Coordinate, dy: Coordinate }),
+	z.object({ type: z.literal("input.text"), text: z.string().min(1).max(4096) }),
+	z.object({ type: z.literal("input.key"), key: z.enum(BROWSER_KEYS) }),
+	z.object({ type: z.literal("ping") }),
+]);
 
 class HttpError extends Error {
 	constructor(
@@ -122,17 +145,19 @@ export interface HttpOptions {
 	devices: DeviceStore;
 	history: History;
 	hub: LiveHub;
+	browser: BrowserService;
 	adminToken: string;
 	extensionToken: string;
 	serverVersion?: string;
 }
 
-interface SocketData {
-	token: string;
-	deviceId: string;
-	unsubscribers: Map<string, () => void>;
-	unsubscribeBroadcast?: () => void;
-}
+type SocketData =
+	| {
+			kind: "stream";
+			unsubscribers: Map<string, () => void>;
+			unsubscribeBroadcast?: () => void;
+	  }
+	| { kind: "browser"; token: string; deviceName: string; viewer?: BrowserViewer };
 
 export interface HttpService {
 	readonly url: string;
@@ -310,6 +335,8 @@ export function createHttpHandler(
 			}
 			const device = await requireDevice(req, options.devices);
 			if (path === "/v1/info" && req.method === "GET") return json(serverInfo(options));
+			if (path === "/v1/browser" && req.method === "GET")
+				return json({ availability: await options.browser.availability() } satisfies BrowserStatusResponse);
 			if (path === "/v1/machine/name" && req.method === "PUT") {
 				await saveMachineName(options.config, MachineNameSchema.parse(await body(req)).machineName);
 				return json(serverInfo(options));
@@ -422,6 +449,31 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 		tailscale.kind === "available"
 			? `http://${tailscale.identity.dnsName}:${options.config.port}`
 			: `http://127.0.0.1:${options.config.port}`;
+	const sendBrowser = (ws: Bun.ServerWebSocket<SocketData>, message: BrowserServerMessage) =>
+		ws.send(JSON.stringify(message));
+	const receiveBrowser = async (
+		ws: Bun.ServerWebSocket<SocketData>,
+		data: Extract<SocketData, { kind: "browser" }>,
+		raw: string | Buffer,
+	) => {
+		let message: BrowserClientMessage;
+		try {
+			message = BrowserClientMessageSchema.parse(JSON.parse(String(raw)));
+		} catch (error) {
+			sendBrowser(ws, {
+				type: "error",
+				error: { code: "bad_request", message: error instanceof Error ? error.message : "Invalid message" },
+			});
+			return;
+		}
+		// Taking control is what lets a phone drive the user's logged-in browser, so a removed phone cannot.
+		if (message.type === "control.take" && !(await options.devices.authenticate(data.token))) {
+			sendBrowser(ws, { type: "error", error: { code: "unauthorized", message: "This phone is no longer paired" } });
+			ws.close(1008, "Device removed");
+			return;
+		}
+		data.viewer?.receive(message);
+	};
 	const websocket = {
 		// A suspended phone stops reading. Bun's defaults then silently drop sends past a 16 MiB backlog while the
 		// socket stays open, so the phone wakes to a stale state. Close it instead: the phone reconnects and
@@ -431,29 +483,42 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 		closeOnBackpressureLimit: true,
 		resetIdleTimeoutOnSend: false,
 		open(ws: Bun.ServerWebSocket<SocketData>) {
-			ws.data.unsubscribeBroadcast = options.hub.onBroadcast((message) => ws.send(JSON.stringify(message)));
+			const data = ws.data;
+			if (data.kind === "browser") {
+				data.viewer = options.browser.connect(data.deviceName, {
+					send: (message) => sendBrowser(ws, message),
+					backlog: () => ws.getBufferedAmount(),
+				});
+				return;
+			}
+			data.unsubscribeBroadcast = options.hub.onBroadcast((message) => ws.send(JSON.stringify(message)));
 			ws.send(JSON.stringify({ type: "hello", epoch, info: serverInfo(options) } satisfies ServerMessage));
 		},
 		message(ws: Bun.ServerWebSocket<SocketData>, raw: string | Buffer) {
+			const data = ws.data;
+			if (data.kind === "browser") {
+				void receiveBrowser(ws, data, raw);
+				return;
+			}
 			try {
 				const message: ClientMessage = ClientMessageSchema.parse(JSON.parse(String(raw)));
 				if (message.type === "ping") ws.send(JSON.stringify({ type: "pong" } satisfies ServerMessage));
-				else if (message.type === "subscribe" && !ws.data.unsubscribers.has(message.sessionId)) {
-					ws.data.unsubscribers.set(
+				else if (message.type === "subscribe" && !data.unsubscribers.has(message.sessionId)) {
+					data.unsubscribers.set(
 						message.sessionId,
 						options.hub.subscribe(message.sessionId, (out) => ws.send(JSON.stringify(out))),
 					);
 				} else if (message.type === "unsubscribe") {
-					ws.data.unsubscribers.get(message.sessionId)?.();
-					ws.data.unsubscribers.delete(message.sessionId);
+					data.unsubscribers.get(message.sessionId)?.();
+					data.unsubscribers.delete(message.sessionId);
 				} else if (message.type === "agent.subscribe" || message.type === "agent.unsubscribe") {
 					// Session ids never contain a newline, so agent keys cannot collide with session keys.
 					const key = `${message.sessionId}\n${message.agentId}`;
 					if (message.type === "agent.unsubscribe") {
-						ws.data.unsubscribers.get(key)?.();
-						ws.data.unsubscribers.delete(key);
-					} else if (!ws.data.unsubscribers.has(key))
-						ws.data.unsubscribers.set(
+						data.unsubscribers.get(key)?.();
+						data.unsubscribers.delete(key);
+					} else if (!data.unsubscribers.has(key))
+						data.unsubscribers.set(
 							key,
 							options.hub.subscribeAgent(message.sessionId, message.agentId, (out) => ws.send(JSON.stringify(out))),
 						);
@@ -468,8 +533,13 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			}
 		},
 		close(ws: Bun.ServerWebSocket<SocketData>) {
-			for (const unsubscribe of ws.data.unsubscribers.values()) unsubscribe();
-			ws.data.unsubscribeBroadcast?.();
+			const data = ws.data;
+			if (data.kind === "browser") {
+				data.viewer?.close();
+				return;
+			}
+			for (const unsubscribe of data.unsubscribers.values()) unsubscribe();
+			data.unsubscribeBroadcast?.();
 		},
 	};
 	const createServer = (hostname: string, surface: "app" | "loopback") => {
@@ -484,12 +554,16 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			websocket,
 			async fetch(req, server) {
 				const url = new URL(req.url);
-				if (url.pathname === "/v1/stream") {
+				if (url.pathname === "/v1/stream" || url.pathname === "/v1/browser/stream") {
 					const token = bearer(req);
 					const device = token ? await options.devices.authenticate(token) : null;
 					if (!token || !device)
 						return errorResponse(new HttpError(401, "unauthorized", "A valid device bearer token is required"));
-					if (server.upgrade(req, { data: { token, deviceId: device.id, unsubscribers: new Map() } })) return;
+					const data: SocketData =
+						url.pathname === "/v1/stream"
+							? { kind: "stream", unsubscribers: new Map() }
+							: { kind: "browser", token, deviceName: device.name };
+					if (server.upgrade(req, { data })) return;
 					return errorResponse(new HttpError(503, "unavailable", "WebSocket upgrade failed"));
 				}
 				return handler(req);

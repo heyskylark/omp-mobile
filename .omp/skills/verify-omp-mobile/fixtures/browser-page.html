@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>OMP browser check</title>
+<style>
+	html, body { margin: 0; height: 100%; font: 64px system-ui; background: #fff; color: #111; }
+	#tap { position: absolute; inset: 0 0 35% 0; width: 100%; font: inherit; background: #dfe3ff; border: 0; }
+	#field { position: absolute; left: 5%; right: 5%; bottom: 10%; height: 15%; font: inherit; }
+	#clock { position: absolute; right: 2%; top: 2%; font-size: 32px; }
+</style>
+</head>
+<body>
+<button id="tap">Taps: 0</button>
+<input id="field" placeholder="typed text">
+<div id="clock"></div>
+<script>
+	let taps = 0;
+	tap.addEventListener("click", () => {
+		taps += 1;
+		tap.textContent = `Taps: ${taps}`;
+		field.focus();
+	});
+	setInterval(() => (clock.textContent = new Date().toISOString().slice(11, 22)), 100);
+</script>
+</body>
+</html>

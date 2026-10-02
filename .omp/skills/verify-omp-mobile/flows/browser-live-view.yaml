@@ -1,0 +1,87 @@
+# Starts a session whose agent opens the fixture page in the relay's Chrome and asks a question, then opens the
+# browser from the question card, takes control, taps the page's big button (which focuses its text field), types
+# TOKEN, hands back, answers the question, and waits for the agent to reply with the field's value.
+# Needs the relay and a Chrome with its extension running (features/browser.md). Costs a few small model turns.
+# env: MACHINE_NAME, PROMPT (see features/browser.md; it names the fixture URL and the question), TOKEN (unique
+# lowercase word)
+appId: com.heyskylark.ompmobile
+name: browser-live-view
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "move, Browse"
+    timeout: 15000
+# Exact label: ".*Browse.*" also matches a session row titled "...Browser...", still on screen during the push.
+- tapOn: "move, Browse"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Message OMP"
+- inputText: ${PROMPT}
+- tapOn: "Send"
+# The card title, never a word from the prompt: the prompt bubble is one long element, so a full match on the
+# title cannot hit it.
+- extendedWaitUntil:
+    visible: "(Allow tool: .*|Sign in)"
+    timeout: 180000
+- repeat:
+    while:
+      visible: "Allow tool: .*"
+    commands:
+      - tapOn: "Approve"
+      - extendedWaitUntil:
+          visible: "(Allow tool: .*|Sign in)"
+          timeout: 180000
+- takeScreenshot: browser-01-question
+- tapOn: "Open browser"
+- extendedWaitUntil:
+    visible: ".*, Take control"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Browser tab"
+    timeout: 30000
+- takeScreenshot: browser-02-watching
+# Primary buttons read as "<SF Symbol>, <title>".
+- tapOn: ".*, Take control"
+- extendedWaitUntil:
+    visible: ".*, Hand back"
+    timeout: 15000
+- takeScreenshot: browser-03-in-control
+# The fixture's button covers the top two thirds of the page, so the frame's centre hits it.
+- tapOn: "Browser tab"
+- tapOn: "Keyboard"
+- inputText: ${TOKEN}
+- takeScreenshot: browser-04-typed
+- tapOn: ".*, Hand back"
+- extendedWaitUntil:
+    visible: ".*, Take control"
+    timeout: 15000
+- takeScreenshot: browser-05-handed-back
+- tapOn: "Close"
+- extendedWaitUntil:
+    visible: "Done"
+    timeout: 15000
+- tapOn: "Done"
+- repeat:
+    while:
+      notVisible: "(?i)${TOKEN}\\.?"
+    commands:
+      - extendedWaitUntil:
+          visible: "(Allow tool: .*|(?i)${TOKEN}\\.?)"
+          timeout: 180000
+      - runFlow:
+          when:
+            visible: "Allow tool: .*"
+          commands:
+            - tapOn: "Approve"
+- takeScreenshot: browser-06-agent-read-value

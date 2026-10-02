@@ -1,6 +1,7 @@
 import type {
 	AgentThreadSnapshot,
 	ApiError,
+	BrowserStatusResponse,
 	CreateSessionRequest,
 	DirectoryListing,
 	MachineNameRequest,
@@ -228,6 +229,14 @@ export class OmpApi {
 			{ method: "GET" },
 			typed<UsageResponse>("usage", ["fetchedAt", "accounts"]),
 			USAGE_TIMEOUT_MS,
+		);
+	}
+
+	browserStatus() {
+		return this.request(
+			"/v1/browser",
+			{ method: "GET" },
+			typed<BrowserStatusResponse>("browser status", ["availability"]),
 		);
 	}
 
