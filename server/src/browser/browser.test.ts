@@ -252,7 +252,8 @@ describe("browser service", () => {
 		relay.frame(1, "frame-1");
 		await until(() => phone.of("frame").length === 1);
 		phone.send({ type: "frame.ack", seq: phone.of("frame")[0]!.frame.seq });
-		await until(() => relay.sent("Page.captureScreenshot").length >= 2);
+		await until(() => relay.sent("Runtime.evaluate").length >= 4);
+		expect(relay.sent("Page.captureScreenshot")).toEqual([]);
 		expect(phone.of("frame")).toHaveLength(1);
 		expect(phone.of("drawing")).toEqual([]);
 

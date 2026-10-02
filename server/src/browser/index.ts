@@ -658,21 +658,24 @@ class Service implements BrowserService {
 						throw error;
 					},
 				);
-			// A static front tab needs no new picture, only proof that Chrome still draws: one captured pixel.
-			const picture = hidden || !stream.latest;
-			const clip = picture ? {} : { clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } };
-			const [shot, layout] = await Promise.all([
-				cdp.send(
-					"Page.captureScreenshot",
-					{ format: "jpeg", quality: JPEG_QUALITY, ...clip },
+			if (!hidden && stream.latest) {
+				// A static front tab needs no new picture, only proof that Chrome still draws. A clipped capture would
+				// briefly resize the page, and the screencast would stream that one-pixel picture to the phone.
+				await cdp.send(
+					"Runtime.evaluate",
+					{ expression: "new Promise((done) => requestAnimationFrame(() => done(true)))", awaitPromise: true },
 					sessionId,
 					this.#answerTimeoutMs,
-				),
+				);
+				if (!stream.closed) this.#setDrawing(stream, true);
+				return;
+			}
+			const [shot, layout] = await Promise.all([
+				cdp.send("Page.captureScreenshot", { format: "jpeg", quality: JPEG_QUALITY }, sessionId, this.#answerTimeoutMs),
 				cdp.send("Page.getLayoutMetrics", {}, sessionId),
 			]);
 			if (stream.closed) return;
 			this.#setDrawing(stream, true);
-			if (!picture) return;
 			const viewport = LayoutSchema.parse(layout).cssLayoutViewport;
 			this.#publish(stream, {
 				jpeg: ScreenshotSchema.parse(shot).data,
