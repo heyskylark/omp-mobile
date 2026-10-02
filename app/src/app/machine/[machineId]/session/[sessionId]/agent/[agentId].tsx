@@ -3,6 +3,7 @@ import { Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import type { AgentSummary, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../../components/agent-menu";
+import { ChatImageProvider } from "../../../../../../components/chat-image";
 import { ChatList } from "../../../../../../components/chat-list";
 import { TimelineRow } from "../../../../../../components/timeline";
 import { ErrorState, Loading } from "../../../../../../components/ui";
@@ -103,21 +104,23 @@ export default function AgentScreen() {
 	};
 	const newestFirst = [...view.items].reverse();
 	return (
-		<View className="flex-1 bg-ink">
-			<ChatList
-				data={newestFirst}
-				extraData={agentsById}
-				keyExtractor={(item) => item.id}
-				renderItem={({ item }) => <TimelineRow item={item} agents={agentsById} onOpenAgent={openAgent} />}
-				contentContainerClassName="px-4 pb-3 pt-5"
-				onEndReached={() => void loadOlder()}
-				onEndReachedThreshold={0.5}
-				ListFooterComponent={
-					view.loadingOlder ? (
-						<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
-					) : null
-				}
-			/>
-		</View>
+		<ChatImageProvider machine={machine}>
+			<View className="flex-1 bg-ink">
+				<ChatList
+					data={newestFirst}
+					extraData={agentsById}
+					keyExtractor={(item) => item.id}
+					renderItem={({ item }) => <TimelineRow item={item} agents={agentsById} onOpenAgent={openAgent} />}
+					contentContainerClassName="px-4 pb-3 pt-5"
+					onEndReached={() => void loadOlder()}
+					onEndReachedThreshold={0.5}
+					ListFooterComponent={
+						view.loadingOlder ? (
+							<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
+						) : null
+					}
+				/>
+			</View>
+		</ChatImageProvider>
 	);
 }

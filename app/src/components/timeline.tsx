@@ -6,6 +6,7 @@ import { agentName, statusLabel, toolIsWorking } from "../data/agents";
 import { skillSegments } from "../data/skill-draft";
 import { AgentStatusIcon } from "./agent-menu";
 import { useAnchoredToggle } from "./chat-list";
+import { ChatImage } from "./chat-image";
 import { SkillSegmentsText } from "./skill-text";
 import { Icon } from "./ui";
 
@@ -64,7 +65,11 @@ function Blocks({ blocks, markdown, skills }: { blocks: Block[]; markdown: boole
 			{blocks.map((block, index) => {
 				if (block.kind === "thinking") return <Thinking key={index} block={block} />;
 				if (block.kind === "image")
-					return (
+					return block.image ? (
+						<View key={index} className="my-1">
+							<ChatImage key={block.image.id} image={block.image} label="Image" maxWidth={markdown ? undefined : 220} />
+						</View>
+					) : (
 						<Text key={index} className="text-caption italic text-secondary">
 							Image attachment
 						</Text>
@@ -114,6 +119,13 @@ function ToolCard({
 					<Icon name={stateIcon} size={17} color={stateColor} />
 				)}
 			</Pressable>
+			{item.images?.length ? (
+				<View className="mt-3 gap-2">
+					{item.images.map((image, index) => (
+						<ChatImage key={`${index}:${image.id}`} image={image} label={`Image from ${item.name}`} />
+					))}
+				</View>
+			) : null}
 			{item.agentIds?.length ? (
 				<AgentChips agentIds={item.agentIds} agents={agents} onOpenAgent={onOpenAgent} className="mt-3" />
 			) : null}
