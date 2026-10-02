@@ -5,6 +5,7 @@ import type { History, HistoryOptions, SessionMetaPage } from "./api";
 import { SessionCatalog } from "./catalog";
 import { DirectoryBrowser, ProjectPathError, privacyGuarded } from "./directories";
 import { filterSessions, sessionFilter, type SessionFilter } from "./filter";
+import { ImageStore } from "./images";
 import { InvalidHistoryCursorError, SessionPager } from "./pager";
 
 function encodeListCursor(offset: number, filter: SessionFilter, secret: Uint8Array) {
@@ -39,6 +40,7 @@ export function createHistory(options: HistoryOptions): History {
 	const catalog = new SessionCatalog(options.sessionsDir);
 	const agents = new AgentCatalog();
 	const pager = new SessionPager(options.cursorSecret);
+	const images = new ImageStore(options.blobsDir);
 	const directories = new DirectoryBrowser(options.roots, async () => {
 		const paths = await Promise.all(
 			(await catalog.all()).map(async (meta) => {
@@ -54,6 +56,7 @@ export function createHistory(options: HistoryOptions): History {
 	});
 
 	return {
+		images,
 		async listSessions({ cursor, limit, project, query }): Promise<SessionMetaPage> {
 			const filter = sessionFilter(project, query);
 			const offset = cursor ? decodeListCursor(cursor, filter, options.cursorSecret) : 0;
@@ -72,12 +75,14 @@ export function createHistory(options: HistoryOptions): History {
 		async readTimeline(id, opts) {
 			const session = await catalog.find(id);
 			if (!session) return { items: [] };
-			return pager.page(session.file, id, opts.before, opts.limit);
+			const page = await pager.page(session.file, id, opts.before, opts.limit);
+			return { ...page, items: await images.describe(page.items) };
 		},
 		async readTail(id, opts) {
 			const session = await catalog.find(id);
 			if (!session) return { items: [], messageKeys: [] };
-			return pager.tail(session.file, opts.afterEntryId, opts.limit);
+			const tail = await pager.tail(session.file, opts.afterEntryId, opts.limit);
+			return { ...tail, items: await images.describe(tail.items) };
 		},
 		async readModelRole(id) {
 			const session = await catalog.find(id);
@@ -90,11 +95,13 @@ export function createHistory(options: HistoryOptions): History {
 		listAgents(rootFile) {
 			return agents.list(rootFile);
 		},
-		readAgentTimeline(agent, opts) {
-			return pager.page(agent.file, agent.file, opts.before, opts.limit);
+		async readAgentTimeline(agent, opts) {
+			const page = await pager.page(agent.file, agent.file, opts.before, opts.limit);
+			return { ...page, items: await images.describe(page.items) };
 		},
-		readAgentTail(agent, opts) {
-			return pager.tail(agent.file, opts.afterEntryId, opts.limit);
+		async readAgentTail(agent, opts) {
+			const tail = await pager.tail(agent.file, opts.afterEntryId, opts.limit);
+			return { ...tail, items: await images.describe(tail.items) };
 		},
 		async recentProjects(limit) {
 			const usable = [];

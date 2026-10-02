@@ -7,6 +7,7 @@ import type {
 	TimelinePage,
 } from "@omp-mobile/protocol";
 import type { AgentFile, AgentLocation } from "./agents";
+import type { ImageStore } from "./images";
 
 /** Everything the server knows about a session from its JSONL file alone. */
 export interface SessionMeta {
@@ -35,6 +36,8 @@ export interface DurableTail {
 }
 
 export interface History {
+	/** Transcript images, from OMP's blob store or a running turn. */
+	readonly images: ImageStore;
 	/**
 	 * Sessions filtered to an exact `project` cwd and a fuzzy title `query` (trimmed; empty means none),
 	 * then paged. A cursor is only valid for the filter it was issued with.

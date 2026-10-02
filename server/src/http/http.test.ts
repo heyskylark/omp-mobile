@@ -11,6 +11,7 @@ import type {
 } from "@omp-mobile/protocol";
 import { createBrowserService } from "../browser/index.ts";
 import type { History } from "../history/api.ts";
+import { ImageStore } from "../history/images.ts";
 import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
 import { createDeviceStore } from "../store/devices.ts";
@@ -105,6 +106,7 @@ class FakeHub implements LiveHub {
 }
 
 const history: History = {
+	images: new ImageStore("/nonexistent"),
 	async listSessions() {
 		return { items: [meta] };
 	},
@@ -413,5 +415,24 @@ describe("HTTP API", () => {
 		);
 		expect(response.status).toBe(400);
 		expect(await response.json()).toMatchObject({ code: "invalid_cursor" });
+	});
+
+	test("serves a transcript image by hash to paired devices only, with its sniffed type", async () => {
+		const { options, token } = await fixture();
+		const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
+		const id = "a".repeat(64);
+		await writeFile(join(directory!, id), gif);
+		await writeFile(join(directory!, "b".repeat(64)), "data:image/png;base64,AAAA");
+		options.history = { ...history, images: new ImageStore(directory!) };
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const headers = { authorization: `Bearer ${token}` };
+		expect((await handler(new Request(`http://mac/v1/images/${id}`))).status).toBe(401);
+		const response = await handler(new Request(`http://mac/v1/images/${id}`, { headers }));
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("image/gif");
+		expect(new Uint8Array(await response.arrayBuffer())).toEqual(gif);
+		// Blobs that are not images, unknown hashes and anything that is not a hash stay private.
+		for (const name of ["b".repeat(64), "c".repeat(64), "..%2Fdevices.json"])
+			expect((await handler(new Request(`http://mac/v1/images/${name}`, { headers }))).status).toBe(404);
 	});
 });

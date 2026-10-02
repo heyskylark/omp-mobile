@@ -12,6 +12,7 @@ import type {
 	TimelineItem,
 } from "@omp-mobile/protocol";
 import type { History, SessionMeta } from "../history/api.ts";
+import { imageBlocks } from "../history/images.ts";
 import { taskAgentIds } from "../history/jsonl.ts";
 import { AgentRoster } from "./agents.ts";
 import type { ExtensionEvent, LiveNotification, LiveOptions } from "./api.ts";
@@ -79,8 +80,8 @@ function outputText(value: unknown): string {
 		const blocks = value.content;
 		if (Array.isArray(blocks))
 			return blocks
-				.map((block) =>
-					block && typeof block === "object" && "text" in block && typeof block.text === "string" ? block.text : "",
+				.flatMap((block) =>
+					block && typeof block === "object" && "text" in block && typeof block.text === "string" ? [block.text] : [],
 				)
 				.join("\n");
 	}
@@ -543,6 +544,8 @@ export class SessionActor {
 		const input = frame.args === undefined ? (previous?.input ?? "") : outputText(frame.args);
 		const result = frame.result ?? frame.partialResult;
 		const agentIds = frame.toolName === "task" ? taskAgentIds(result) : [];
+		const content = result && typeof result === "object" && "content" in result ? result.content : undefined;
+		const images = imageBlocks(content).flatMap((block) => this.#opts.history.images.remember(block) ?? []);
 		const item: TimelineItem = {
 			id: `t:${frame.toolCallId}`,
 			kind: "tool",
@@ -553,6 +556,7 @@ export class SessionActor {
 			state,
 			...(result === undefined ? {} : { output: outputText(result) }),
 			...(agentIds.length ? { agentIds } : {}),
+			...(images.length ? { images } : {}),
 		};
 		this.#live.set(item.id, item);
 		this.#emit({ type: "timeline.upsert", sessionId: this.sessionId, items: [item] });

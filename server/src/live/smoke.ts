@@ -2,6 +2,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { Block, TimelineItem } from "@omp-mobile/protocol";
 import type { DurableTail, History, SessionMeta } from "../history/api.ts";
+import { ImageStore } from "../history/images.ts";
 import { createLiveHub } from "./index.ts";
 
 const scratch = `/tmp/omp-mobile-live-smoke-${process.pid}`;
@@ -102,6 +103,7 @@ async function durableTail(afterEntryId?: string): Promise<DurableTail> {
 }
 
 const history: History = {
+	images: new ImageStore(join(scratch, "blobs")),
 	async listSessions() {
 		return { items: known ? [known] : [] };
 	},

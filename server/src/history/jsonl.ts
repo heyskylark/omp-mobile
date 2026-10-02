@@ -1,4 +1,5 @@
 import type { Block, TimelineItem } from "@omp-mobile/protocol";
+import { blobImageRef, imageBlocks } from "./images";
 
 export interface RawEntry {
 	type: string;
@@ -91,8 +92,10 @@ function blocks(content: unknown): Block[] {
 			result.push({ kind: "thinking", text: block.text, ...(block.redacted === true ? { redacted: true } : {}) });
 		else if (block.type === "redactedThinking" || block.type === "redacted_thinking")
 			result.push({ kind: "thinking", text: "Thinking redacted", redacted: true });
-		else if (block.type === "image" || block.type === "image_url")
-			result.push({ kind: "image", ...(typeof block.mimeType === "string" ? { mimeType: block.mimeType } : {}) });
+		else if (block.type === "image") {
+			const image = blobImageRef(block);
+			result.push(image ? { kind: "image", image } : { kind: "image" });
+		} else if (block.type === "image_url") result.push({ kind: "image" });
 	}
 	return result;
 }
@@ -123,6 +126,7 @@ function resultOutput(message: Record<string, unknown>): {
 	let value: unknown = content;
 	if (Array.isArray(content))
 		value = content
+			.filter((part) => !(part && typeof part === "object" && (part as Record<string, unknown>).type === "image"))
 			.map((part) =>
 				typeof part === "object" && part && typeof (part as Record<string, unknown>).text === "string"
 					? (part as Record<string, unknown>).text
@@ -181,6 +185,7 @@ export function mapEntry(
 				const result = toolResults.get(call.id);
 				const output = result ? resultOutput(result) : undefined;
 				const agentIds = call.name === "task" ? taskAgentIds(result) : [];
+				const images = imageBlocks(result?.content).flatMap((block) => blobImageRef(block) ?? []);
 				items.push({
 					id: `t:${call.id}`,
 					kind: "tool",
@@ -192,6 +197,7 @@ export function mapEntry(
 					...(output?.output ? { output: output.output } : {}),
 					...(output?.outputTruncated ? { outputTruncated: true } : {}),
 					...(agentIds.length ? { agentIds } : {}),
+					...(images.length ? { images } : {}),
 				});
 			}
 			return items;

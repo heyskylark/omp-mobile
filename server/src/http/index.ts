@@ -356,6 +356,17 @@ export function createHttpHandler(
 				await options.devices.remove(device.id);
 				return new Response(null, { status: 204 });
 			}
+			const imageMatch = path.match(/^\/v1\/images\/([^/]+)$/);
+			if (imageMatch && req.method === "GET") {
+				const image = await options.history.images.read(imageMatch[1]!);
+				if (!image) throw new HttpError(404, "not_found", "Image not found");
+				return new Response(image.bytes, {
+					headers: {
+						"content-type": image.info.mimeType,
+						"cache-control": "private, max-age=31536000, immutable",
+					},
+				});
+			}
 			if (path === "/v1/sessions" && req.method === "GET") {
 				const cursor = url.searchParams.get("cursor") ?? undefined;
 				const project = url.searchParams.get("project") ?? undefined;

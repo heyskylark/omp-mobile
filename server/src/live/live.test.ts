@@ -14,7 +14,8 @@ import {
 import { publicLiveness, reduceOwnership, type OwnershipState } from "./state.ts";
 import { AgentCatalog, locateAgent } from "../history/agents.ts";
 import type { History, SessionMeta } from "../history/api.ts";
-import type { ServerMessage } from "@omp-mobile/protocol";
+import { ImageStore } from "../history/images.ts";
+import type { ServerMessage, TimelineItem } from "@omp-mobile/protocol";
 import { createLiveHub } from "./index.ts";
 
 describe("ownership reducer", () => {
@@ -60,6 +61,7 @@ describe("ownership reducer", () => {
 function stubHistory(sessions: SessionMeta[] = []): History {
 	const agents = new AgentCatalog();
 	return {
+		images: new ImageStore("/nonexistent"),
 		locateAgent,
 		async getSessionByFile(file) {
 			return sessions.find((session) => session.file === file) ?? null;
@@ -299,6 +301,43 @@ for await (const line of console) {
 			);
 		} finally {
 			errors.mockRestore();
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("shows a running turn's inline tool image before OMP saves it, and serves its bytes", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		const png = new Uint8Array(33);
+		png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+		new DataView(png.buffer).setUint32(16, 800);
+		new DataView(png.buffer).setUint32(20, 600);
+		const data = Buffer.from(png).toString("base64");
+		const result = `[{ type: "text", text: "ok" }, { type: "image", mimeType: "image/png", data: "${data}" }]`;
+		await writeFile(ompPath, fakeOmp.replace(`[{ type: "text", text: "ok" }]`, result), { mode: 0o755 });
+		const history = stubHistory();
+		const hub = createLiveHub({ history, ompPath, relayPort: 0, extensionPath: "/tmp/e.ts", settleGraceMs: 60_000 });
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
+			const ready = () => {
+				const liveness = hub.overlay(sessionId).liveness;
+				return liveness.kind === "server" && liveness.phase === "ready";
+			};
+			await until(ready, "the first turn to settle");
+			const tools: TimelineItem[] = [];
+			hub.subscribe(sessionId, (message) => {
+				if (message.type === "timeline.upsert") tools.push(...message.items.filter((item) => item.kind === "tool"));
+			});
+			await hub.prompt(sessionId, { operationId: "op-2", text: "second" });
+			await until(() => tools.some((item) => item.kind === "tool" && item.state === "succeeded"), "the tool to end");
+			const id = new Bun.CryptoHasher("sha256").update(png).digest("hex");
+			expect(tools.at(-1)).toMatchObject({
+				output: "ok",
+				images: [{ id, mimeType: "image/png", width: 800, height: 600 }],
+			});
+			expect((await history.images.read(id))?.bytes).toEqual(png);
+		} finally {
 			await hub.stop();
 			await rm(dir, { recursive: true, force: true });
 		}

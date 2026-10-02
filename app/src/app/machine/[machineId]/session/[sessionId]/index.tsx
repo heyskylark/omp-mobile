@@ -7,6 +7,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanima
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
+import { ChatImageProvider } from "../../../../../components/chat-image";
 import { ChatList } from "../../../../../components/chat-list";
 import { Composer, useComposerDraft } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
@@ -240,72 +241,74 @@ export default function SessionScreen() {
 	const running = working ? view.items.filter((item) => item.kind === "tool" && item.state === "running") : [];
 	const newestFirst = [...view.items.filter((item) => !running.includes(item)), ...running].reverse();
 	return (
-		<View className="flex-1 bg-ink">
-			{/* Swiping down through the composer drags the keyboard closed; the offset starts that at the composer's top. */}
-			<KeyboardGestureArea
-				interpolator="ios"
-				offset={gestureOffset}
-				textInputNativeID={inputNativeID}
-				style={styles.fill}
-			>
-				<ChatList
-					data={newestFirst}
-					extraData={[skillNames, agentsById]}
-					keyExtractor={(item) => item.id}
-					renderItem={({ item }) => (
-						<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
-					)}
-					contentContainerClassName="px-4 pb-3 pt-3"
-					keyboardShouldPersistTaps="always"
-					keyboardDismissMode="interactive"
-					composer={{ height: composerHeight, keyboardOffset }}
-					onEndReached={() => void loadOlder()}
-					onEndReachedThreshold={0.5}
-					ListFooterComponent={
-						view.loadingOlder ? (
-							<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
-						) : null
-					}
-				/>
-			</KeyboardGestureArea>
-			<Animated.View
-				pointerEvents="box-none"
-				onLayout={(event) => {
-					const { height } = event.nativeEvent.layout;
-					composerHeight.value = height;
-					setGestureOffset(Math.round(height - restingBottom + KEYBOARD_GAP));
-				}}
-				style={[styles.floating, { paddingBottom: restingBottom }, floatingStyle]}
-			>
-				{view.pending[0] ? (
-					<InteractionPanel
-						key={view.pending[0].id}
-						interaction={view.pending[0]}
-						busy={responding}
-						respond={(response) => void respond(view.pending[0].id, response)}
-						onOpenBrowser={browserAvailable ? openBrowser : undefined}
+		<ChatImageProvider machine={machine}>
+			<View className="flex-1 bg-ink">
+				{/* Swiping down through the composer drags the keyboard closed; the offset starts that at the composer's top. */}
+				<KeyboardGestureArea
+					interpolator="ios"
+					offset={gestureOffset}
+					textInputNativeID={inputNativeID}
+					style={styles.fill}
+				>
+					<ChatList
+						data={newestFirst}
+						extraData={[skillNames, agentsById]}
+						keyExtractor={(item) => item.id}
+						renderItem={({ item }) => (
+							<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
+						)}
+						contentContainerClassName="px-4 pb-3 pt-3"
+						keyboardShouldPersistTaps="always"
+						keyboardDismissMode="interactive"
+						composer={{ height: composerHeight, keyboardOffset }}
+						onEndReached={() => void loadOlder()}
+						onEndReachedThreshold={0.5}
+						ListFooterComponent={
+							view.loadingOlder ? (
+								<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
+							) : null
+						}
 					/>
-				) : null}
-				<Composer
-					machineId={machineId}
-					value={draft.text}
-					onChangeText={draft.setText}
-					onSend={() => void send()}
-					working={working}
-					onStop={stop}
-					disabled={sending}
-					images={draft.images}
-					onAttach={draft.attach}
-					onPasteImages={draft.paste}
-					onRemoveImage={draft.remove}
-					modelRole={view.modelRole}
-					onModelRoleChange={(role) => void changeModelRole(role)}
-					modelRoleDisabled={changingRole || roleLocked}
-					skills={skills}
-					onInputNativeIDChange={setInputNativeID}
-				/>
-			</Animated.View>
-		</View>
+				</KeyboardGestureArea>
+				<Animated.View
+					pointerEvents="box-none"
+					onLayout={(event) => {
+						const { height } = event.nativeEvent.layout;
+						composerHeight.value = height;
+						setGestureOffset(Math.round(height - restingBottom + KEYBOARD_GAP));
+					}}
+					style={[styles.floating, { paddingBottom: restingBottom }, floatingStyle]}
+				>
+					{view.pending[0] ? (
+						<InteractionPanel
+							key={view.pending[0].id}
+							interaction={view.pending[0]}
+							busy={responding}
+							respond={(response) => void respond(view.pending[0].id, response)}
+							onOpenBrowser={browserAvailable ? openBrowser : undefined}
+						/>
+					) : null}
+					<Composer
+						machineId={machineId}
+						value={draft.text}
+						onChangeText={draft.setText}
+						onSend={() => void send()}
+						working={working}
+						onStop={stop}
+						disabled={sending}
+						images={draft.images}
+						onAttach={draft.attach}
+						onPasteImages={draft.paste}
+						onRemoveImage={draft.remove}
+						modelRole={view.modelRole}
+						onModelRoleChange={(role) => void changeModelRole(role)}
+						modelRoleDisabled={changingRole || roleLocked}
+						skills={skills}
+						onInputNativeIDChange={setInputNativeID}
+					/>
+				</Animated.View>
+			</View>
+		</ChatImageProvider>
 	);
 }
 
