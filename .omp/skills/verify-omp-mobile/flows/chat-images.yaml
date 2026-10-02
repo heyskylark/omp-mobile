@@ -1,0 +1,44 @@
+# Opens a session found by title search, scrolls up to a transcript image, opens it full screen, and closes it.
+# env: MACHINE_NAME, QUERY (search text that finds the session), SESSION_TITLE (regex-escaped title),
+#      IMAGE_LABEL (regex: "Image" for an image in a message, "Image from <tool>" for a tool's image),
+#      PREFIX (screenshot name prefix, e.g. images-user or images-tool)
+appId: com.heyskylark.ompmobile
+name: chat-images
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "Search sessions"
+- inputText: ${QUERY}
+- extendedWaitUntil:
+    visible: "${SESSION_TITLE},.*"
+    timeout: 30000
+- tapOn: "${SESSION_TITLE},.*"
+- extendedWaitUntil:
+    visible: "Message OMP"
+    timeout: 30000
+# The transcript is an inverted list; images in older turns are above the newest messages.
+- scrollUntilVisible:
+    element:
+      text: ${IMAGE_LABEL}
+    direction: UP
+    timeout: 90000
+    centerElement: true
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-01-inline
+- tapOn: ${IMAGE_LABEL}
+- extendedWaitUntil:
+    visible: "Close image"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: ${PREFIX}-02-viewer
+- tapOn: "Close image"
+- extendedWaitUntil:
+    notVisible: "Close image"
+    timeout: 10000
+- extendedWaitUntil:
+    visible: ${IMAGE_LABEL}
+    timeout: 10000
+- takeScreenshot: ${PREFIX}-03-closed
