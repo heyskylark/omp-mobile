@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { appendFile, mkdtemp, mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHistory, InvalidHistoryCursorError, ProjectPathError } from "./index";
+
+/** A PNG signature and IHDR chunk for a `width`×`height` image: all the server reads of a PNG. */
+function pngHeader(width: number, height: number): Uint8Array {
+	const bytes = new Uint8Array(33);
+	bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+	new DataView(bytes.buffer).setUint32(16, width);
+	new DataView(bytes.buffer).setUint32(20, height);
+	return bytes;
+}
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -16,6 +26,13 @@ async function fixture() {
 	const project = join(root, "projects", "alpha");
 	await mkdir(join(sessionsDir, "bucket"), { recursive: true });
 	await mkdir(join(project, ".git"), { recursive: true });
+	await mkdir(join(root, "blobs"));
+	const photo = pngHeader(640, 480);
+	const photoId = createHash("sha256").update(photo).digest("hex");
+	await writeFile(join(root, "blobs", photoId), photo);
+	const screenshot = pngHeader(1280, 720);
+	const screenshotId = createHash("sha256").update(screenshot).digest("hex");
+	await writeFile(join(root, "blobs", screenshotId), screenshot);
 	const file = join(sessionsDir, "bucket", "fixture_session-1.jsonl");
 	const title = JSON.stringify({ type: "title", title: "Fixture title" }).padEnd(255, " ") + "\n";
 	const records = [
@@ -30,7 +47,7 @@ async function fixture() {
 				timestamp: 1767225601000,
 				content: [
 					{ type: "text", text: "Hello" },
-					{ type: "image", mimeType: "image/png" },
+					{ type: "image", data: `blob:sha256:${photoId}`, mimeType: "image/png" },
 				],
 			},
 		},
@@ -68,7 +85,16 @@ async function fixture() {
 			id: "r1",
 			parentId: "a1",
 			timestamp: "2026-01-01T00:00:04.000Z",
-			message: { role: "toolResult", toolCallId: "call-1", content: [{ type: "text", text: "ok" }], isError: false },
+			message: {
+				role: "toolResult",
+				toolCallId: "call-1",
+				content: [
+					{ type: "text", text: "ok" },
+					{ type: "image", data: `blob:sha256:${screenshotId}`, mimeType: "image/png" },
+					{ type: "image", data: `blob:sha256:${"0".repeat(64)}`, mimeType: "image/png" },
+				],
+				isError: false,
+			},
 		},
 		{ type: "compaction", id: "c1", parentId: "r1", timestamp: "2026-01-01T00:00:05.000Z", shortSummary: "summary" },
 	];
@@ -79,12 +105,12 @@ async function fixture() {
 		roots: [join(root, "projects")],
 		cursorSecret: new TextEncoder().encode("secret"),
 	});
-	return { root, project, file, history };
+	return { root, project, file, history, photoId, screenshotId };
 }
 
 describe("OMP JSONL history", () => {
-	test("maps only the active branch with tool results, thinking, compaction and malformed tail", async () => {
-		const { history } = await fixture();
+	test("maps only the active branch with tool results, images, thinking, compaction and malformed tail", async () => {
+		const { history, photoId, screenshotId } = await fixture();
 		const page = await history.readTimeline("session-1", { limit: 20 });
 		expect(page).toEqual({
 			items: [
@@ -94,7 +120,7 @@ describe("OMP JSONL history", () => {
 					at: "2026-01-01T00:00:01.000Z",
 					blocks: [
 						{ kind: "text", text: "Hello" },
-						{ kind: "image", mimeType: "image/png" },
+						{ kind: "image", image: { id: photoId, mimeType: "image/png", width: 640, height: 480 } },
 					],
 				},
 				{
@@ -118,6 +144,7 @@ describe("OMP JSONL history", () => {
 					input: "ls -la",
 					state: "succeeded",
 					output: "ok",
+					images: [{ id: screenshotId, mimeType: "image/png", width: 1280, height: 720 }],
 				},
 				{
 					id: "e:c1",

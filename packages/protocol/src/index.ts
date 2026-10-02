@@ -51,10 +51,24 @@ export interface SessionListPage {
 	nextCursor?: string;
 }
 
+/**
+ * An image shown in the transcript. Fetch its bytes from `GET /v1/images/:id` with the device bearer token; the
+ * response is immutable, so an id always names the same picture.
+ */
+export interface ImageRef {
+	/** SHA-256 hex of the image bytes, the hash OMP's blob store files it under. */
+	id: string;
+	mimeType: string;
+	/** Pixel size, when the server could read the image header. */
+	width?: number;
+	height?: number;
+}
+
 export type Block =
 	| { kind: "text"; text: string }
 	| { kind: "thinking"; text: string; redacted?: boolean }
-	| { kind: "image"; mimeType?: string };
+	/** `image` is absent when the transcript holds no image data the server can serve. */
+	| { kind: "image"; image?: ImageRef };
 
 export type ToolState = "running" | "succeeded" | "failed";
 
@@ -100,6 +114,8 @@ export type TimelineItem =
 			outputTruncated?: boolean;
 			/** Agents this `task` call spawned; the call is still working while any of them runs. */
 			agentIds?: string[];
+			/** Images the tool returned to the model, such as screenshots or a read image file. */
+			images?: ImageRef[];
 	  }
 	| {
 			id: string;
