@@ -5,10 +5,10 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
 ## Sub-features
 
 - `browser-entry`: the header `Browser` button appears while `GET /v1/browser` is not `relay_offline`; question and text cards show `Open browser`, approval cards do not. **Exercised** (`browser-live-view.yaml` up to `browser-01-question`, against the real relay).
-- `browser-watch`: the screen auto-watches the most recently active tab and shows its frames, title in the header, tab count chip `Tabs`. **Exercised** with the fake relay (`browser-control.yaml`). With real Chrome: recipe-only, see Gotchas.
+- `browser-watch`: the screen auto-watches the tab Chrome shows in front (the server marks it `front`) and shows its frames, title in the header, tab count chip `Tabs`; with no tab in front it shows the tab list. **Exercised** with the fake relay (`browser-control.yaml`), and the tab-list case against the real relay.
 - `browser-control`: `Take control` → `Hand back`; a tap on `Browser tab` sends `mouseMoved`/`mousePressed`/`mouseReleased` at the matching CSS pixel; `Keyboard` + typing sends one `Input.insertText` per character; erasing sends `Backspace`; `Tab key`/`Escape key`/arrow buttons send key events; the key row rides above the keyboard. **Exercised** with the fake relay.
 - `browser-picker`: `Tabs` opens the picker with `<title>, <host>` rows; picking one watches it. **Exercised** with the fake relay.
-- `browser-not-drawing`: with the Mac's screen locked, the screen says `Chrome isn't drawing this tab` with `Bring to front` (or keeps the last frame with `Not updating. …`). **Exercised** against the real relay.
+- `browser-not-drawing`: with the Mac's screen locked, or on a tab Chrome put to sleep in the background (its page never answers), the screen says `Chrome isn't drawing this tab` with `Bring to front` (or keeps the last frame with `Not updating. …`) and stays on the tab. **Exercised** against the real relay.
 - `browser-unavailable`: `Browser relay isn't running` (nothing on the relay port) and `Chrome isn't connected` (relay up, no extension). Recipe-only in the app; covered by `server/src/browser/browser.test.ts`.
 - `browser-real-input`: phone input reaches real Chrome. Proved at the server API with a WebSocket client against the real relay; the DOM showed the tap and the typed text.
 

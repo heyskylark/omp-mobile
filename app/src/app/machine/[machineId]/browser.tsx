@@ -116,7 +116,7 @@ export default function BrowserScreen() {
 				<EmptyState
 					icon="macwindow"
 					title="Chrome isn't drawing this tab"
-					detail={`Chrome draws nothing while its window is covered or the screen on ${machineName} is locked or asleep.`}
+					detail={`Chrome draws nothing while its window is covered, the tab is asleep in the background, or the screen on ${machineName} is locked or asleep.`}
 					action={<PrimaryButton label="Bring to front" icon="macwindow" onPress={viewer.bringToFront} />}
 				/>
 			) : (
@@ -159,7 +159,7 @@ function TabPicker({
 								{tab.title || host}
 							</Text>
 							<Text numberOfLines={1} className="text-caption text-secondary">
-								{host}
+								{tab.front ? `${host} · In front` : host}
 							</Text>
 						</View>
 						{current ? <Icon name="checkmark" color="#8B93FF" size={16} /> : null}

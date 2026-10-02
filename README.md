@@ -151,9 +151,9 @@ OMP agents can drive your everyday Chrome, with the sites you are already signed
 
 OMP starts the relay the first time an agent uses the browser. To use the browser from the app before that, run `omp browser-relay` on the computer.
 
-The Safari button appears in a session's header while the relay runs. The browser screen lists Chrome's tabs and shows the one with the most recent activity first. Tap the tab name to pick another one. Pinch to zoom.
+The Safari button appears in a session's header while the relay runs. The browser screen opens the tab Chrome shows in front, or the tab list when no tab is in front. Tabs in front are listed first, marked **In front**, followed by the rest by most recent activity. Tap the tab name to pick another one. Pinch to zoom.
 
-- **Watching** never changes anything in Chrome. Chrome draws only the tab in front, so a tab in the background shows a still picture that refreshes every few seconds. Tap **Bring to front** to see it live.
+- **Watching** never changes anything in Chrome. Chrome draws only the tab in front, so a tab in the background shows a still picture that refreshes every few seconds. Chrome puts some background tabs to sleep, and those show **Chrome isn't drawing this tab** until you tap **Bring to front**. Tap **Bring to front** to see any tab live.
 - **Take control** brings the tab to the front on the computer and sends your taps, drags, and typing to it. Tap the keyboard button to type. Only one phone controls a tab at a time. Taking control from another phone asks first.
 - The agent is not paused while you are in control. To sign in for the agent, let it ask you first: it waits on the question, you sign in from the browser screen, close it, and answer the question.
 - Chrome draws a tab, and answers taps and typing in it, only while its window is on screen. **Take control** and **Bring to front** bring Chrome in front of other apps on the computer. While the computer's screen is locked or asleep, no Chrome draws anything, and the browser screen says **Chrome isn't drawing this tab** or keeps the last picture with a note that it is not updating. To use the browser while you are away, keep the computer's screen awake and unlocked.

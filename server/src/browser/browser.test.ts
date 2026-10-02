@@ -16,6 +16,8 @@ class FakeRelay {
 	visibility = "visible";
 	/** Methods Chrome never answers: captures while the Mac is locked, input and page checks on a covered window. */
 	readonly unanswered = new Set<string>();
+	/** Sessions whose page reports itself hidden, as a tab behind another in its window. */
+	readonly hiddenTabs = new Set<string>();
 	readonly tabs = [
 		{ targetId: "PAGEa.1", type: "page", title: "Sign in", url: "https://example.com/login" },
 		{ targetId: "PAGEa.2", type: "page", title: "Docs", url: "https://example.com/docs" },
@@ -50,7 +52,7 @@ class FakeRelay {
 					if (method === "Target.setDiscoverTargets")
 						for (const targetInfo of this.tabs) this.emit("Target.targetCreated", { targetInfo });
 					if ([...this.unanswered].some((prefix) => method.startsWith(prefix))) return;
-					ws.send(JSON.stringify({ id, result: this.#result(method, params) }));
+					ws.send(JSON.stringify({ id, result: this.#result(method, params, sessionId) }));
 				},
 			},
 		});
@@ -73,12 +75,12 @@ class FakeRelay {
 		return this.commands.filter((command) => command.method === method);
 	}
 
-	#result(method: string, params: Record<string, unknown>): unknown {
+	#result(method: string, params: Record<string, unknown>, sessionId: string | undefined): unknown {
 		switch (method) {
 			case "Target.attachToTarget":
 				return { sessionId: `S-${String(params.targetId)}` };
 			case "Runtime.evaluate":
-				return { result: { type: "string", value: this.visibility } };
+				return { result: { type: "string", value: this.hiddenTabs.has(sessionId ?? "") ? "hidden" : this.visibility } };
 			case "Page.captureScreenshot":
 				return { data: "c25hcHNob3Q=" };
 			case "Page.getLayoutMetrics":
@@ -348,7 +350,37 @@ describe("browser service", () => {
 		const phone = new Phone(service, "iPhone");
 		await watchFirstTab(phone, relay);
 		phone.viewer.close();
-		await until(() => relay.sent("Target.detachFromTarget").length === 1);
-		expect(relay.sent("Page.stopScreencast")).toHaveLength(1);
+		await until(() => relay.sent("Page.stopScreencast").length === 1);
+		await until(() => relay.sent("Target.detachFromTarget").at(-1)?.params.sessionId === "S-PAGEa.1");
+	});
+
+	test("tabs Chrome shows come first, and only they are marked front", async () => {
+		const { relay, service } = setup();
+		relay.hiddenTabs.add("S-PAGEa.1");
+		relay.start();
+		const phone = new Phone(service, "iPhone");
+		await until(() => phone.of("tabs").length > 0);
+		expect(phone.of("tabs")[0]?.tabs.map((tab) => [tab.title, tab.front])).toEqual([
+			["Docs", true],
+			["Sign in", false],
+		]);
+	});
+
+	test("a tab asleep in the background starts streaming once Chrome wakes it", async () => {
+		const { relay, service } = setup();
+		relay.start();
+		relay.unanswered.add("Page.enable");
+		const phone = new Phone(service, "iPhone");
+		await until(() => phone.of("tabs").length > 0);
+		phone.send({ type: "watch", tabId: "PAGEa.1", maxWidth: 1170 });
+		await until(() => phone.of("drawing").length === 1);
+		expect(phone.of("drawing")[0]).toEqual({ type: "drawing", drawing: false });
+		expect(phone.of("unwatched")).toEqual([]);
+
+		relay.unanswered.delete("Page.enable");
+		await until(() => relay.sent("Page.startScreencast").length === 1);
+		relay.frame(1, "frame-1");
+		await until(() => phone.of("frame").length === 1);
+		expect(phone.of("drawing").at(-1)).toEqual({ type: "drawing", drawing: true });
 	});
 });
