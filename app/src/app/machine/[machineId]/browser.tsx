@@ -7,7 +7,7 @@ import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ApiError, BrowserControl, BrowserKey, BrowserTab } from "@omp-mobile/protocol";
 import { BrowserFrameView } from "../../../components/browser-frame";
-import { useToast } from "../../../components/toast";
+import { ToastProvider, useToast } from "../../../components/toast";
 import { EmptyState, ErrorState, Icon, Loading, PrimaryButton } from "../../../components/ui";
 import { useBrowserViewer, type BrowserViewerControls, type ViewerFrame } from "../../../data/browser";
 import { useMachine } from "../../../data/machines";
@@ -24,7 +24,16 @@ function hostOf(url: string): string {
 	return /^[a-z][a-z0-9+.-]*:\/\/([^/?#]+)/i.exec(url)?.[1] ?? url;
 }
 
+/** A full-screen modal covers the root toast, so the screen shows its own. */
 export default function BrowserScreen() {
+	return (
+		<ToastProvider>
+			<Browser />
+		</ToastProvider>
+	);
+}
+
+function Browser() {
 	const { machineId } = useLocalSearchParams<{ machineId: string }>();
 	const machine = useMachine(machineId);
 	const { show } = useToast();
