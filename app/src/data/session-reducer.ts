@@ -42,7 +42,11 @@ export function upsert(current: TimelineItem[], additions: TimelineItem[]): Time
 			continue;
 		byId.set(item.id, item);
 	}
-	return [...byId.values()].sort((left, right) => left.at.localeCompare(right.at));
+	// History stamps a message's tool calls with the message's own time, and they follow its text. Break the tie
+	// explicitly: a call seen live is already in the list before its durable message arrives.
+	return [...byId.values()].sort(
+		(left, right) => left.at.localeCompare(right.at) || Number(left.kind === "tool") - Number(right.kind === "tool"),
+	);
 }
 
 function ready(snapshot: SessionSnapshot): SessionViewState {
