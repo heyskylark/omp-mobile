@@ -347,6 +347,8 @@ export interface BrowserTab {
 	url: string;
 	/** Epoch milliseconds of the tab's last creation, navigation, or title change the server saw. */
 	lastActivityAt: number;
+	/** Chrome shows this tab in its window. Tabs Chrome put to sleep in the background are never front. */
+	front: boolean;
 }
 
 export interface BrowserFrame {

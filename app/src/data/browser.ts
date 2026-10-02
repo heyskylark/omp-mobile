@@ -241,8 +241,10 @@ class BrowserViewer {
 					this.dispatch({ type: "gone", tabId });
 					break;
 				}
-				const newest = message.tabs[0];
-				if (this.tabId === null && !this.closed && newest) this.watch(newest.id);
+				// Opening an arbitrary background tab would land on one Chrome put to sleep; without a front tab the
+				// screen shows the tab list instead.
+				const front = message.tabs.find((tab) => tab.front);
+				if (this.tabId === null && !this.closed && front) this.watch(front.id);
 				break;
 			}
 			case "unwatched":

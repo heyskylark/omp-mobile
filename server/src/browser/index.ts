@@ -96,6 +96,9 @@ class TabStream {
 	/** A screencast frame Chrome waits on: no viewer had room for it, so Chrome must not produce the next yet. */
 	unackedFrame: number | null = null;
 	lastFrameAt = 0;
+	/** Whether the screencast started. A tab Chrome put to sleep in the background answers nothing until shown. */
+	casting = false;
+	maxWidth = MAX_FRAME_WIDTH;
 	closed = false;
 	checking = false;
 	/** Whether Chrome answers captures of the tab. Nothing on a Mac draws while its screen is locked. */
@@ -216,7 +219,10 @@ class Service implements BrowserService {
 		this.#viewers.add(viewer);
 		clearTimeout(this.#idleTimer);
 		if (this.#availability) out.send({ type: "state", availability: this.#availability });
-		if (this.#link.kind === "open") out.send({ type: "tabs", tabs: this.#sortedTabs() });
+		if (this.#link.kind === "open")
+			void this.#probeFront().then(() => {
+				if (this.#viewers.has(viewer)) out.send({ type: "tabs", tabs: this.#sortedTabs() });
+			});
 		if (this.#link.kind === "closed") void this.#dial();
 		return {
 			receive: (message) => this.#receive(viewer, message),
@@ -254,6 +260,7 @@ class Service implements BrowserService {
 					if (this.#tabs.has(viewer.tabId)) this.#join(viewer);
 					else this.#tabGone(viewer);
 				}
+				await this.#probeFront();
 				this.#broadcast({ type: "tabs", tabs: this.#sortedTabs() });
 				if (!this.#viewers.size) this.#scheduleIdleClose();
 				return;
@@ -319,7 +326,13 @@ class Service implements BrowserService {
 				const parsed = TargetEventSchema.safeParse(event.params);
 				if (!parsed.success || parsed.data.targetInfo.type !== "page") return;
 				const { targetId, title, url } = parsed.data.targetInfo;
-				this.#tabs.set(targetId, { id: targetId, title, url, lastActivityAt: Date.now() });
+				this.#tabs.set(targetId, {
+					id: targetId,
+					title,
+					url,
+					lastActivityAt: Date.now(),
+					front: this.#tabs.get(targetId)?.front ?? false,
+				});
 				this.#setAvailability({ kind: "ready" });
 				this.#scheduleTabs();
 				return;
@@ -368,7 +381,41 @@ class Service implements BrowserService {
 	}
 
 	#sortedTabs(): BrowserTab[] {
-		return [...this.#tabs.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+		return [...this.#tabs.values()].sort(
+			(a, b) => Number(b.front) - Number(a.front) || b.lastActivityAt - a.lastActivityAt,
+		);
+	}
+
+	/** Asks every tab whether Chrome shows it, so a phone opens on the tab in front. Sleeping tabs never answer. */
+	async #probeFront(): Promise<void> {
+		if (this.#link.kind !== "open") return;
+		const cdp = this.#link.cdp;
+		await Promise.all(
+			[...this.#tabs.values()].map(async (tab) => {
+				let sessionId: string | undefined;
+				try {
+					sessionId = SessionIdSchema.parse(
+						await cdp.send(
+							"Target.attachToTarget",
+							{ targetId: tab.id, flatten: true },
+							undefined,
+							this.#answerTimeoutMs,
+						),
+					).sessionId;
+					const result = await cdp.send(
+						"Runtime.evaluate",
+						{ expression: "document.visibilityState", returnByValue: true },
+						sessionId,
+						this.#answerTimeoutMs,
+					);
+					tab.front = EvaluateSchema.parse(result).result.value === "visible";
+				} catch {
+					tab.front = false;
+				} finally {
+					if (sessionId) void cdp.send("Target.detachFromTarget", { sessionId }).catch(() => {});
+				}
+			}),
+		);
 	}
 
 	#receive(viewer: Viewer, message: BrowserClientMessage): void {
@@ -492,7 +539,9 @@ class Service implements BrowserService {
 			.send("Target.activateTarget", { targetId: tabId })
 			.catch(() => {})
 			.then(() => this.#raiseBrowser())
-			.catch(() => {});
+			.catch(() => {})
+			.then(() => this.#probeFront())
+			.then(() => this.#scheduleTabs());
 	}
 
 	#input(viewer: Viewer, input: InputMessage): void {
@@ -548,13 +597,8 @@ class Service implements BrowserService {
 				return;
 			}
 			stream.sessionId = sessionId;
-			await cdp.send("Page.enable", {}, sessionId);
-			await cdp.send(
-				"Page.startScreencast",
-				{ format: "jpeg", quality: JPEG_QUALITY, maxWidth, maxHeight: maxWidth * 2, everyNthFrame: 1 },
-				sessionId,
-			);
-			stream.lastFrameAt = Date.now();
+			stream.maxWidth = maxWidth;
+			await this.#startScreencast(stream);
 			stream.timer = setInterval(() => void this.#checkQuiet(stream), this.#quietMs);
 		} catch (error) {
 			if (stream.closed) return;
@@ -564,6 +608,34 @@ class Service implements BrowserService {
 				this.#tabGone(viewer);
 			}
 		}
+	}
+
+	async #startScreencast(stream: TabStream): Promise<void> {
+		const sessionId = stream.sessionId;
+		if (this.#link.kind !== "open" || !sessionId) return;
+		const cdp = this.#link.cdp;
+		try {
+			await cdp.send("Page.enable", {}, sessionId, this.#answerTimeoutMs);
+			await cdp.send(
+				"Page.startScreencast",
+				{
+					format: "jpeg",
+					quality: JPEG_QUALITY,
+					maxWidth: stream.maxWidth,
+					maxHeight: stream.maxWidth * 2,
+					everyNthFrame: 1,
+				},
+				sessionId,
+				this.#answerTimeoutMs,
+			);
+		} catch (error) {
+			if (!(error instanceof CdpTimeoutError)) throw error;
+			if (!stream.closed) this.#setDrawing(stream, false);
+			return;
+		}
+		if (stream.closed) return;
+		stream.casting = true;
+		stream.lastFrameAt = Date.now();
 	}
 
 	#closeStream(stream: TabStream, detach: boolean): void {
@@ -630,6 +702,16 @@ class Service implements BrowserService {
 	 */
 	async #checkQuiet(stream: TabStream): Promise<void> {
 		const sessionId = stream.sessionId;
+		if (!stream.casting) {
+			if (stream.checking || !sessionId) return;
+			stream.checking = true;
+			await this.#startScreencast(stream)
+				.catch(() => {})
+				.finally(() => {
+					stream.checking = false;
+				});
+			return;
+		}
 		const now = Date.now();
 		if (
 			stream.checking ||
