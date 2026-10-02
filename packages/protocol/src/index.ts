@@ -402,8 +402,9 @@ export type BrowserServerMessage =
 	| { type: "tabs"; tabs: BrowserTab[] }
 	| { type: "watching"; tabId: string; control: BrowserControl }
 	/**
-	 * Whether Chrome is drawing the watched tab. No Chrome on a Mac draws while its screen is locked; the last frame
-	 * stays current until Chrome draws again. Sent on watch when false, then on every change.
+	 * Whether Chrome is drawing the watched tab. Chrome draws nothing while the Mac's screen is locked, and may stop
+	 * drawing a tab whose window is covered; the last frame stays current until Chrome draws again. Sent on watch when
+	 * false, then on every change.
 	 */
 	| { type: "drawing"; drawing: boolean }
 	/** The watched tab closed. */
