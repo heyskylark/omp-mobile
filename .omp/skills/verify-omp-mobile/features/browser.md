@@ -8,7 +8,7 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
 - `browser-watch`: the screen auto-watches the most recently active tab and shows its frames, title in the header, tab count chip `Tabs`. **Exercised** with the fake relay (`browser-control.yaml`). With real Chrome: recipe-only, see Gotchas.
 - `browser-control`: `Take control` → `Hand back`; a tap on `Browser tab` sends `mouseMoved`/`mousePressed`/`mouseReleased` at the matching CSS pixel; `Keyboard` + typing sends one `Input.insertText` per character; erasing sends `Backspace`; `Tab key`/`Escape key`/arrow buttons send key events; the key row rides above the keyboard. **Exercised** with the fake relay.
 - `browser-picker`: `Tabs` opens the picker with `<title>, <host>` rows; picking one watches it. **Exercised** with the fake relay.
-- `browser-not-drawing`: with the Mac's screen locked, the screen says `Chrome isn't drawing` (or keeps the last frame with `Not updating: …`). **Exercised** against the real relay.
+- `browser-not-drawing`: with the Mac's screen locked, the screen says `Chrome isn't drawing this tab` with `Bring to front` (or keeps the last frame with `Not updating. …`). **Exercised** against the real relay.
 - `browser-unavailable`: `Browser relay isn't running` (nothing on the relay port) and `Chrome isn't connected` (relay up, no extension). Recipe-only in the app; covered by `server/src/browser/browser.test.ts`.
 - `browser-real-input`: phone input reaches real Chrome. Proved at the server API with a WebSocket client against the real relay; the DOM showed the tap and the typed text.
 
@@ -39,6 +39,7 @@ The agent's reply must be `<TOKEN>`: the phone tapped the fixture's button (whic
 ## Gotchas
 
 - No Chrome on a Mac draws while its screen is locked, headless or not: screencasts stay silent and `Page.captureScreenshot` never answers. Check with `osascript -l JavaScript -e 'ObjC.import("CoreGraphics"); ObjC.deepUnwrap(ObjC.castRefToObject($.CGSessionCopyCurrentDictionary())).CGSSessionScreenIsLocked'`. Input still reaches the page, slowly.
+- A Chrome window covered by other apps reports its tabs as `hidden`, stops screencasting, and leaves input unanswered; captures still work. `Take control` raises Chrome with `open -b`, so a verify run brings the user's Chrome in front.
 - Primary buttons read as `<SF Symbol>, <title>`: match `.*, Take control` and `.*, Hand back`.
 - The New session screen's browse button is `move, Browse`; `.*Browse.*` also matches session rows titled `…Browser…`.
 - Maestro evaluates `${…}` inside `inputText` strings, so pass a prompt containing braces through an env variable (`PROMPT`).

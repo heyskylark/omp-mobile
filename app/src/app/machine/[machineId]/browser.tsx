@@ -114,9 +114,10 @@ export default function BrowserScreen() {
 				/>
 			) : state.watch.kind === "watching" && !state.watch.drawing ? (
 				<EmptyState
-					icon="lock.display"
-					title="Chrome isn't drawing"
-					detail={`The screen on ${machineName} is locked or asleep, so Chrome draws nothing. The tab appears here when the screen is unlocked.`}
+					icon="macwindow"
+					title="Chrome isn't drawing this tab"
+					detail={`Chrome draws nothing while its window is covered or the screen on ${machineName} is locked or asleep.`}
+					action={<PrimaryButton label="Bring to front" icon="macwindow" onPress={viewer.bringToFront} />}
 				/>
 			) : (
 				<Loading label="Loading tab…" />
@@ -231,7 +232,7 @@ function LiveTab({
 			{drawing ? null : (
 				<View className="border-b border-border bg-surface px-4 py-2">
 					<Text className="text-caption text-secondary">
-						Not updating: the screen on {machineName} is locked or asleep.
+						Not updating. Bring Chrome to the front on {machineName}, or unlock its screen.
 					</Text>
 				</View>
 			)}
@@ -242,7 +243,7 @@ function LiveTab({
 			) : null}
 			{controlling ? (
 				<View className="border-b border-border bg-surface px-4 py-2">
-					<Text className="text-caption text-warning">The agent isn't paused and may also use this tab.</Text>
+					<Text className="text-caption text-secondary">You're in control of this tab.</Text>
 				</View>
 			) : null}
 			<BrowserFrameView

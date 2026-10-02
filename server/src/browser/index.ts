@@ -9,6 +9,7 @@ import type {
 	BrowserTab,
 } from "@omp-mobile/protocol";
 import { z } from "zod";
+import { raiseBrowser } from "./front.ts";
 import { CdpConnection, type CdpEvent, CdpTimeoutError, probeRelay } from "./relay.ts";
 
 const FRAME_CREDIT = 2;
@@ -16,7 +17,7 @@ const MAX_SOCKET_BACKLOG = 512 * 1024;
 const MAX_FRAME_WIDTH = 1280;
 const JPEG_QUALITY = 60;
 const PROBE_CACHE_MS = 3_000;
-const CAPTURE_TIMEOUT_MS = 3_000;
+const ANSWER_TIMEOUT_MS = 3_000;
 /** Captures that never return still queue up in Chrome, so a browser that does not draw is checked rarely. */
 const STALLED_RECHECK_MS = 10_000;
 
@@ -28,8 +29,10 @@ export interface BrowserServiceOptions {
 	idleCloseMs?: number;
 	/** A watched tab silent this long is checked for being in the background. */
 	quietMs?: number;
-	/** How long a capture may take before Chrome counts as not drawing. */
-	captureTimeoutMs?: number;
+	/** How long Chrome may take to answer an input or a check of the tab before the tab counts as stalled. */
+	answerTimeoutMs?: number;
+	/** Brings the browser in front of other apps on the computer. */
+	raiseBrowser?: () => Promise<void>;
 }
 
 export interface ViewerOutput {
@@ -101,6 +104,8 @@ class TabStream {
 	timer?: Timer;
 	/** Input runs one command sequence at a time so a tap's press and release never interleave with a keystroke. */
 	input: Promise<void> = Promise.resolve();
+	/** Bumped when input stalls, so the input queued behind the stalled command is dropped rather than replayed. */
+	inputGeneration = 0;
 	readonly viewers = new Set<Viewer>();
 
 	constructor(readonly tabId: string) {}
@@ -173,7 +178,8 @@ class Service implements BrowserService {
 	readonly #retryMs: number;
 	readonly #idleCloseMs: number;
 	readonly #quietMs: number;
-	readonly #captureTimeoutMs: number;
+	readonly #answerTimeoutMs: number;
+	readonly #raiseBrowser: () => Promise<void>;
 	#link: Link = { kind: "closed" };
 	#availability: BrowserAvailability | null = null;
 	readonly #viewers = new Set<Viewer>();
@@ -190,7 +196,8 @@ class Service implements BrowserService {
 		this.#retryMs = options.retryMs ?? 3_000;
 		this.#idleCloseMs = options.idleCloseMs ?? 15_000;
 		this.#quietMs = options.quietMs ?? 2_000;
-		this.#captureTimeoutMs = options.captureTimeoutMs ?? CAPTURE_TIMEOUT_MS;
+		this.#answerTimeoutMs = options.answerTimeoutMs ?? ANSWER_TIMEOUT_MS;
+		this.#raiseBrowser = options.raiseBrowser ?? raiseBrowser;
 	}
 
 	async availability(): Promise<BrowserAvailability> {
@@ -480,8 +487,12 @@ class Service implements BrowserService {
 	}
 
 	#activate(tabId: string): void {
-		if (this.#link.kind === "open")
-			void this.#link.cdp.send("Target.activateTarget", { targetId: tabId }).catch(() => {});
+		if (this.#link.kind !== "open") return;
+		void this.#link.cdp
+			.send("Target.activateTarget", { targetId: tabId })
+			.catch(() => {})
+			.then(() => this.#raiseBrowser())
+			.catch(() => {});
 	}
 
 	#input(viewer: Viewer, input: InputMessage): void {
@@ -497,11 +508,23 @@ class Service implements BrowserService {
 			return;
 		}
 		const cdp = this.#link.cdp;
+		const generation = stream.inputGeneration;
 		stream.input = stream.input.then(async () => {
+			if (generation !== stream.inputGeneration) return;
 			try {
-				for (const [method, params] of inputCommands(input)) await cdp.send(method, params, sessionId);
+				for (const [method, params] of inputCommands(input))
+					await cdp.send(method, params, sessionId, this.#answerTimeoutMs);
 			} catch (error) {
-				viewer.error("unavailable", error instanceof Error ? error.message : "Input failed");
+				if (generation !== stream.inputGeneration) return;
+				stream.inputGeneration++;
+				viewer.error(
+					"unavailable",
+					error instanceof CdpTimeoutError
+						? "Chrome isn't answering this tab. Bring it to the front on the computer."
+						: error instanceof Error
+							? error.message
+							: "Input failed",
+				);
 			}
 		});
 	}
@@ -601,9 +624,9 @@ class Service implements BrowserService {
 	}
 
 	/**
-	 * Chrome only paints, and so only screencasts, the tab in front, and nothing at all while the Mac's screen is
-	 * locked. A quiet stream is a static page, whose last frame is still current, a background tab, which gets a still
-	 * every check instead, or a browser that does not draw, whose captures never return.
+	 * Chrome only paints, and so only screencasts, the tab in front of a window that is itself on screen, and nothing
+	 * at all while the Mac's screen is locked. A quiet stream is a static page, whose last frame is still current, a
+	 * hidden tab, which gets a still every check instead, or a tab Chrome does not draw, whose captures never return.
 	 */
 	async #checkQuiet(stream: TabStream): Promise<void> {
 		const sessionId = stream.sessionId;
@@ -620,10 +643,21 @@ class Service implements BrowserService {
 		const cdp = this.#link.cdp;
 		stream.checking = true;
 		try {
-			const visibility = EvaluateSchema.parse(
-				await cdp.send("Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true }, sessionId),
-			).result.value;
-			const hidden = visibility === "hidden";
+			// Chrome freezes some background tabs, and their pages never answer; such a tab is hidden.
+			const hidden = await cdp
+				.send(
+					"Runtime.evaluate",
+					{ expression: "document.visibilityState", returnByValue: true },
+					sessionId,
+					this.#answerTimeoutMs,
+				)
+				.then(
+					(result) => EvaluateSchema.parse(result).result.value === "hidden",
+					(error: unknown) => {
+						if (error instanceof CdpTimeoutError) return true;
+						throw error;
+					},
+				);
 			// A static front tab needs no new picture, only proof that Chrome still draws: one captured pixel.
 			const picture = hidden || !stream.latest;
 			const clip = picture ? {} : { clip: { x: 0, y: 0, width: 1, height: 1, scale: 1 } };
@@ -632,7 +666,7 @@ class Service implements BrowserService {
 					"Page.captureScreenshot",
 					{ format: "jpeg", quality: JPEG_QUALITY, ...clip },
 					sessionId,
-					this.#captureTimeoutMs,
+					this.#answerTimeoutMs,
 				),
 				cdp.send("Page.getLayoutMetrics", {}, sessionId),
 			]);

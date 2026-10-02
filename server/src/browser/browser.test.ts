@@ -14,8 +14,8 @@ class FakeRelay {
 	probes = 0;
 	extensionConnected = true;
 	visibility = "visible";
-	/** While false, captures get no answer, as from a Chrome on a Mac whose screen is locked. */
-	drawing = true;
+	/** Methods Chrome never answers: captures while the Mac is locked, input and page checks on a covered window. */
+	readonly unanswered = new Set<string>();
 	readonly tabs = [
 		{ targetId: "PAGEa.1", type: "page", title: "Sign in", url: "https://example.com/login" },
 		{ targetId: "PAGEa.2", type: "page", title: "Docs", url: "https://example.com/docs" },
@@ -49,7 +49,7 @@ class FakeRelay {
 					this.commands.push({ method, params, sessionId });
 					if (method === "Target.setDiscoverTargets")
 						for (const targetInfo of this.tabs) this.emit("Target.targetCreated", { targetInfo });
-					if (method === "Page.captureScreenshot" && !this.drawing) return;
+					if ([...this.unanswered].some((prefix) => method.startsWith(prefix))) return;
 					ws.send(JSON.stringify({ id, result: this.#result(method, params) }));
 				},
 			},
@@ -118,10 +118,12 @@ async function until(condition: () => boolean, timeoutMs = 2_000): Promise<void>
 
 let relay: FakeRelay | undefined;
 let service: BrowserService | undefined;
+let raised = 0;
 afterEach(() => {
 	service?.stop();
 	relay?.stop();
 	service = relay = undefined;
+	raised = 0;
 });
 
 // These run against real sockets, so time is real too; the service's intervals are shortened instead of faked.
@@ -133,7 +135,10 @@ function setup() {
 		retryMs: 20,
 		idleCloseMs: 20,
 		quietMs: 40,
-		captureTimeoutMs: 50,
+		answerTimeoutMs: 50,
+		raiseBrowser: async () => {
+			raised++;
+		},
 	});
 	return { relay, service };
 }
@@ -217,6 +222,7 @@ describe("browser service", () => {
 		expect(second.of("control").at(-1)?.control).toEqual({ kind: "other", deviceName: "iPhone" });
 		await until(() => relay.sent("Target.activateTarget").length === 1);
 		expect(relay.sent("Target.activateTarget")[0]?.params).toEqual({ targetId: "PAGEa.1" });
+		await until(() => raised === 1);
 
 		first.send({ type: "input.tap", x: 10, y: 20 });
 		first.send({ type: "input.text", text: "héllo 👋" });
@@ -264,7 +270,7 @@ describe("browser service", () => {
 	test("a browser that stops drawing is reported until a frame arrives again", async () => {
 		const { relay, service } = setup();
 		relay.start();
-		relay.drawing = false;
+		relay.unanswered.add("Page.captureScreenshot");
 		const phone = new Phone(service, "iPhone");
 		await watchFirstTab(phone, relay);
 		await until(() => phone.of("drawing").length === 1);
@@ -279,6 +285,49 @@ describe("browser service", () => {
 		await until(() => phone.of("drawing").length === 2);
 		expect(phone.of("drawing")[1]).toEqual({ type: "drawing", drawing: true });
 		expect(phone.of("frame")[0]?.frame.jpeg).toBe("frame-1");
+	});
+
+	test("a frozen tab whose page never answers is shown as stills", async () => {
+		const { relay, service } = setup();
+		relay.start();
+		relay.unanswered.add("Runtime.evaluate");
+		const phone = new Phone(service, "iPhone");
+		await watchFirstTab(phone, relay);
+		await until(() => phone.of("frame").length === 1);
+		expect(phone.of("frame")[0]?.frame).toMatchObject({ jpeg: "c25hcHNob3Q=", mode: "snapshot" });
+		expect(phone.of("drawing")).toEqual([]);
+	});
+
+	test("input Chrome does not answer is dropped and reported once, and later input still goes through", async () => {
+		const { relay, service } = setup();
+		relay.start();
+		const phone = new Phone(service, "iPhone");
+		await watchFirstTab(phone, relay);
+		phone.send({ type: "control.take" });
+		relay.unanswered.add("Input.");
+		for (let i = 0; i < 5; i++) phone.send({ type: "input.tap", x: i, y: i });
+		await until(() => phone.of("error").length === 1);
+		expect(phone.of("error")[0]?.error).toEqual({
+			code: "unavailable",
+			message: "Chrome isn't answering this tab. Bring it to the front on the computer.",
+		});
+		expect(relay.sent("Input.dispatchMouseEvent")).toHaveLength(1);
+
+		relay.unanswered.delete("Input.");
+		phone.send({ type: "input.text", text: "back" });
+		await until(() => relay.sent("Input.insertText").length === 1);
+		expect(relay.sent("Input.dispatchMouseEvent")).toHaveLength(1);
+		expect(phone.of("error")).toHaveLength(1);
+	});
+
+	test("bringing the watched tab to the front raises the browser", async () => {
+		const { relay, service } = setup();
+		relay.start();
+		const phone = new Phone(service, "iPhone");
+		await watchFirstTab(phone, relay);
+		phone.send({ type: "tab.activate" });
+		await until(() => raised === 1);
+		expect(relay.sent("Target.activateTarget")).toHaveLength(1);
 	});
 
 	test("a closed tab stops the stream and tells its viewers", async () => {
