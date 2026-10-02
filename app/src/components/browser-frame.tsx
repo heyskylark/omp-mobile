@@ -200,8 +200,11 @@ export function BrowserFrameView({
 				>
 					{/* Touches land on the container so locationX/Y are relative to the whole image. */}
 					<View pointerEvents="none" style={StyleSheet.absoluteFill}>
+						{/* A fresh image per frame: an image given a source equal to its last one never reports onLoad,
+						    and a static page repeats frames, which would leave the next frame waiting forever. */}
 						{source0 && slot0 ? (
 							<Image
+								key={`${slot0.epoch}:${slot0.seq}`}
 								source={source0}
 								resizeMode="stretch"
 								style={[StyleSheet.absoluteFill, { opacity: front === 0 ? 1 : 0 }]}
@@ -211,6 +214,7 @@ export function BrowserFrameView({
 						) : null}
 						{source1 && slot1 ? (
 							<Image
+								key={`${slot1.epoch}:${slot1.seq}`}
 								source={source1}
 								resizeMode="stretch"
 								style={[StyleSheet.absoluteFill, { opacity: front === 1 ? 1 : 0 }]}
