@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { router, Stack, useLocalSearchParams } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { ApiError, BrowserControl, BrowserKey, BrowserTab } from "@omp-mobile/protocol";
+import type { BrowserControl, BrowserKey, BrowserTab } from "@omp-mobile/protocol";
 import { BrowserFrameView } from "../../../components/browser-frame";
 import { ToastProvider, useToast } from "../../../components/toast";
 import { EmptyState, ErrorState, Icon, Loading, PrimaryButton } from "../../../components/ui";
-import { useBrowserViewer, type BrowserViewerControls, type ViewerFrame } from "../../../data/browser";
+import {
+	useBrowserViewer,
+	type BrowserViewerControls,
+	type BrowserViewerEvents,
+	type ViewerFrame,
+} from "../../../data/browser";
 import { useMachine } from "../../../data/machines";
 
 const KEY_BUTTONS: { key: BrowserKey; label: string; accessibilityLabel: string }[] = [
@@ -37,8 +43,18 @@ function Browser() {
 	const { machineId } = useLocalSearchParams<{ machineId: string }>();
 	const machine = useMachine(machineId);
 	const { show } = useToast();
-	const onError = useCallback((error: ApiError) => show(error.message, "error"), [show]);
-	const viewer = useBrowserViewer(machine, onError);
+	const events = useMemo<BrowserViewerEvents>(
+		() => ({
+			error: (error) => show(error.message, "error"),
+			copied: (text) => {
+				void Clipboard.setStringAsync(text);
+				void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+				show("Copied");
+			},
+		}),
+		[show],
+	);
+	const viewer = useBrowserViewer(machine, events);
 	const { state } = viewer;
 	const [picking, setPicking] = useState(false);
 
@@ -252,7 +268,9 @@ function LiveTab({
 			) : null}
 			{controlling ? (
 				<View className="border-b border-border bg-surface px-4 py-2">
-					<Text className="text-caption text-secondary">You're in control of this tab.</Text>
+					<Text className="text-caption text-secondary">
+						You're in control of this tab. Double-tap a word, or hold and drag, to select text.
+					</Text>
 				</View>
 			) : null}
 			<BrowserFrameView
@@ -262,6 +280,7 @@ function LiveTab({
 				onDisplayed={viewer.ack}
 				onTap={viewer.tap}
 				onScroll={viewer.scroll}
+				onDrag={viewer.drag}
 			/>
 			<View
 				className="gap-2 border-t border-border bg-ink px-4 pt-3"
@@ -278,6 +297,42 @@ function LiveTab({
 						>
 							<Icon name="keyboard" size={18} />
 						</Pressable>
+						<Pressable
+							accessibilityRole="button"
+							accessibilityLabel="Copy"
+							onPress={viewer.copy}
+							className="h-10 flex-1 items-center justify-center rounded-xl bg-surface-raised active:opacity-70"
+						>
+							<Icon name="doc.on.doc" size={17} />
+						</Pressable>
+						{/* iOS's own paste control: the app sees the clipboard only when it is tapped, with no prompt. */}
+						{Clipboard.isPasteButtonAvailable ? (
+							<View className="h-10 flex-1 overflow-hidden rounded-xl">
+								<Clipboard.ClipboardPasteButton
+									acceptedContentTypes={["plain-text"]}
+									displayMode="iconOnly"
+									cornerStyle="fixed"
+									backgroundColor="#1B1B1E"
+									foregroundColor="#ECECEE"
+									style={{ width: "100%", height: "100%" }}
+									onPress={(data) => {
+										if (data.type === "text" && data.text) viewer.type(data.text);
+									}}
+								/>
+							</View>
+						) : (
+							<Pressable
+								accessibilityRole="button"
+								accessibilityLabel="Paste"
+								onPress={async () => {
+									const text = await Clipboard.getStringAsync();
+									if (text) viewer.type(text);
+								}}
+								className="h-10 flex-1 items-center justify-center rounded-xl bg-surface-raised active:opacity-70"
+							>
+								<Icon name="doc.on.clipboard" size={17} />
+							</Pressable>
+						)}
 						{KEY_BUTTONS.map(({ key, label, accessibilityLabel }) => (
 							<Pressable
 								key={key}

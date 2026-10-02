@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 // Stands in for the OMP Browser Relay so the app's browser screen can be driven without Chrome, for example while
 // the Mac's screen is locked and no Chrome draws. Serves one tab, streams the two fixture JPEGs as screencast frames
-// (one per acknowledged frame, at most 10 a second), and prints every input and activation it receives as
-// `CMD <method> <params>`.
+// (one per acknowledged frame, at most 10 a second), answers the copy button's selection check with `Fake selection`,
+// and prints every input and activation it receives as `CMD <method> <params>`.
 //   fake-browser-relay.ts [port]    default 29224; point the run's config.json "browserRelayUrl" at it
 import { join } from "node:path";
 
@@ -57,7 +57,10 @@ Bun.serve({
 				}, 100);
 			}
 			if (method === "Page.stopScreencast") clearInterval(timer);
-			ws.send(JSON.stringify({ id, result: RESULTS[method] ?? {} }));
+			const selection = method === "Runtime.evaluate" && String(params.expression).includes("getSelection");
+			const result = selection ? { result: { value: { text: "Fake selection" } } } : (RESULTS[method] ?? {});
+			if (selection) console.log("CMD copy");
+			ws.send(JSON.stringify({ id, result }));
 		},
 		close() {
 			clearInterval(timer);

@@ -121,10 +121,17 @@ const BrowserClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("tab.activate") }),
 	z.object({ type: z.literal("control.take") }),
 	z.object({ type: z.literal("control.release") }),
-	z.object({ type: z.literal("input.tap"), x: Coordinate, y: Coordinate }),
+	z.object({
+		type: z.literal("input.tap"),
+		x: Coordinate,
+		y: Coordinate,
+		count: z.number().int().min(1).max(3).optional(),
+	}),
 	z.object({ type: z.literal("input.scroll"), x: Coordinate, y: Coordinate, dx: Coordinate, dy: Coordinate }),
 	z.object({ type: z.literal("input.text"), text: z.string().min(1).max(4096) }),
 	z.object({ type: z.literal("input.key"), key: z.enum(BROWSER_KEYS) }),
+	z.object({ type: z.literal("input.drag"), phase: z.enum(["start", "move", "end"]), x: Coordinate, y: Coordinate }),
+	z.object({ type: z.literal("clipboard.copy") }),
 	z.object({ type: z.literal("ping") }),
 ]);
 
