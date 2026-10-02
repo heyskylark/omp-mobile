@@ -61,7 +61,7 @@ Read-only. Run before the first drive and after any surprising failure:
 .omp/skills/verify-omp-mobile/bin/doctor.ts "$RUN_ID"                  # --no-sim before step 3 of Launch
 ```
 
-Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's, `Booted`, and on an iOS 26.x runtime; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro and Java work. A `FAIL` names the fix.
+Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's, `Booted`, and on an iOS 26.x runtime; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro works and `java` is 17+ (checked with `--no-sim` too). A `FAIL` names the fix.
 
 ## Drive
 

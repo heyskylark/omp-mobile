@@ -132,10 +132,20 @@ if (checkSim) {
 			}
 		}
 	}
-	const maestro = run(["maestro", "--version"]);
-	if (maestro) maestro.code === 0 ? ok(`maestro ${maestro.out.split("\n").pop()}`) : fail(`maestro: ${maestro.err}`);
-	const java = run(["java", "-version"]);
-	if (java) java.code === 0 ? ok(`java ${java.err.split("\n")[0]}`) : fail("java not found; Maestro needs a JDK on PATH or JAVA_HOME");
+}
+
+const maestro = run(["maestro", "--version"]);
+if (maestro) maestro.code === 0 ? ok(`maestro ${maestro.out.split("\n").pop()}`) : fail(`maestro: ${maestro.err}`);
+const java = run(["java", "-version"]);
+if (java && java.code !== 0) {
+	fail(`java -version: ${java.err} (${installHints.java})`);
+} else if (java) {
+	const banner = java.err.split("\n")[0];
+	// `version "16.0.2"`, `version "17"`, legacy `version "1.8.0_402"` (= 8).
+	const parts = banner.match(/version "([^"]+)"/)?.[1].split(/[._-]/) ?? [];
+	const major = Number(parts[0] === "1" ? parts[1] : parts[0]);
+	if (major >= 17) ok(`java ${banner}`);
+	else fail(`java ${Number.isNaN(major) ? "version unknown" : major} found (${banner}); Maestro needs 17+: ${installHints.java}`);
 }
 
 process.exit(failed ? 1 : 0);
