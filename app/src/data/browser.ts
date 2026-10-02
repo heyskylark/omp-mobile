@@ -14,6 +14,8 @@ import type { PairedMachine } from "../native/types";
 import { openMachineSocket, PING_MS, STALE_MS } from "./live";
 
 const MAX_FRAME_WIDTH = 1280;
+/** The server's limit on one `input.text`; longer pastes are sent in pieces. */
+const MAX_TEXT_LENGTH = 4096;
 
 const SERVER_MESSAGE_TYPES: Record<BrowserServerMessage["type"], true> = {
 	state: true,
@@ -24,6 +26,7 @@ const SERVER_MESSAGE_TYPES: Record<BrowserServerMessage["type"], true> = {
 	control: true,
 	frame: true,
 	pong: true,
+	clipboard: true,
 	error: true,
 };
 
@@ -124,6 +127,7 @@ function applyMessage(state: BrowserViewerState, message: BrowserServerMessage, 
 				? { ...state, watch: { ...state.watch, frame: { ...message.frame, epoch } } }
 				: state;
 		case "pong":
+		case "clipboard":
 		case "error":
 			return state;
 	}
@@ -167,7 +171,7 @@ class BrowserViewer {
 	constructor(
 		private readonly machine: PairedMachine,
 		private readonly dispatch: (action: BrowserViewerAction) => void,
-		private readonly onError: (error: ApiError) => void,
+		private readonly events: BrowserViewerEvents,
 	) {}
 
 	start() {
@@ -258,7 +262,10 @@ class BrowserViewer {
 				this.controlling = message.control.kind === "you";
 				break;
 			case "error":
-				this.onError(message.error);
+				this.events.error(message.error);
+				break;
+			case "clipboard":
+				this.events.copied(message.text);
 				break;
 			default:
 				break;
@@ -320,15 +327,25 @@ class BrowserViewer {
 	}
 }
 
+export interface BrowserViewerEvents {
+	error(error: ApiError): void;
+	/** The selected text a `copy` asked for. */
+	copied(text: string): void;
+}
+
 export interface BrowserViewerControls {
 	watch(tabId: string): void;
 	takeControl(): void;
 	release(): void;
 	bringToFront(): void;
-	tap(x: number, y: number): void;
+	/** `count` above 1 continues a double or triple tap at the same spot. */
+	tap(x: number, y: number, count: number): void;
 	scroll(x: number, y: number, dx: number, dy: number): void;
+	drag(phase: "start" | "move" | "end", x: number, y: number): void;
 	type(text: string): void;
 	key(key: BrowserKey): void;
+	/** Asks for the page's selected text, delivered to `copied`. */
+	copy(): void;
 	/** Call once the frame is on screen; the server stops sending after two unacknowledged frames. */
 	ack(frame: ViewerFrame): void;
 }
@@ -336,17 +353,20 @@ export interface BrowserViewerControls {
 /** Owns one browser stream socket for the calling screen's lifetime. */
 export function useBrowserViewer(
 	machine: PairedMachine | undefined,
-	onError: (error: ApiError) => void,
+	events: BrowserViewerEvents,
 ): { state: BrowserViewerState } & BrowserViewerControls {
 	const [state, dispatch] = useReducer(browserViewerReducer, INITIAL_STATE);
 	const viewer = useRef<BrowserViewer | null>(null);
-	const errorHandler = useRef(onError);
+	const handlers = useRef(events);
 	useEffect(() => {
-		errorHandler.current = onError;
-	}, [onError]);
+		handlers.current = events;
+	}, [events]);
 	useEffect(() => {
 		if (!machine) return;
-		const instance = new BrowserViewer(machine, dispatch, (error) => errorHandler.current(error));
+		const instance = new BrowserViewer(machine, dispatch, {
+			error: (error) => handlers.current.error(error),
+			copied: (text) => handlers.current.copied(text),
+		});
 		viewer.current = instance;
 		instance.start();
 		return () => {
@@ -360,10 +380,20 @@ export function useBrowserViewer(
 			takeControl: () => viewer.current?.takeControl(),
 			release: () => viewer.current?.release(),
 			bringToFront: () => viewer.current?.send({ type: "tab.activate" }),
-			tap: (x, y) => viewer.current?.send({ type: "input.tap", x, y }),
+			tap: (x, y, count) => viewer.current?.send({ type: "input.tap", x, y, ...(count > 1 ? { count } : {}) }),
 			scroll: (x, y, dx, dy) => viewer.current?.send({ type: "input.scroll", x, y, dx, dy }),
-			type: (text) => viewer.current?.send({ type: "input.text", text }),
+			drag: (phase, x, y) => viewer.current?.send({ type: "input.drag", phase, x, y }),
+			type: (text) => {
+				for (let start = 0; start < text.length; ) {
+					let end = Math.min(text.length, start + MAX_TEXT_LENGTH);
+					// Never split an emoji's surrogate pair across two inserts.
+					if (end < text.length && /[\uD800-\uDBFF]/.test(text[end - 1] ?? "")) end--;
+					viewer.current?.send({ type: "input.text", text: text.slice(start, end) });
+					start = end;
+				}
+			},
 			key: (key) => viewer.current?.send({ type: "input.key", key }),
+			copy: () => viewer.current?.send({ type: "clipboard.copy" }),
 			ack: (frame) => viewer.current?.ack(frame),
 		}),
 		[],

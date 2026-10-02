@@ -391,10 +391,15 @@ export type BrowserClientMessage =
 	/** Take control of the watched tab from anyone else, bringing it to the front. Repeating it is harmless. */
 	| { type: "control.take" }
 	| { type: "control.release" }
-	| { type: "input.tap"; x: number; y: number }
+	/** `count` 2 or 3 continues a double or triple click at the same spot, which selects a word or a paragraph. */
+	| { type: "input.tap"; x: number; y: number; count?: number }
 	| { type: "input.scroll"; x: number; y: number; dx: number; dy: number }
 	| { type: "input.text"; text: string }
 	| { type: "input.key"; key: BrowserKey }
+	/** A held mouse button moving from `start` to `end`, which selects text. */
+	| { type: "input.drag"; phase: "start" | "move" | "end"; x: number; y: number }
+	/** Read the text selected in the watched tab; answered with `clipboard` to this viewer only. Needs control. */
+	| { type: "clipboard.copy" }
 	| { type: "ping" };
 
 /** Messages the server sends on `WS /v1/browser/stream`. */
@@ -414,6 +419,8 @@ export type BrowserServerMessage =
 	| { type: "control"; control: BrowserControl }
 	| { type: "frame"; frame: BrowserFrame }
 	| { type: "pong" }
+	/** The selected text a `clipboard.copy` asked for. */
+	| { type: "clipboard"; text: string }
 	| { type: "error"; error: ApiError };
 
 export type PushCategory = "OMP_APPROVAL" | "OMP_QUESTION" | "OMP_INFO";

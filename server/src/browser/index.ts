@@ -128,6 +128,26 @@ const LayoutSchema = z.object({
 	cssLayoutViewport: z.object({ clientWidth: z.number(), clientHeight: z.number() }),
 });
 const EvaluateSchema = z.object({ result: z.object({ value: z.unknown() }) });
+const SelectionSchema = z.union([z.object({ text: z.string() }), z.object({ password: z.literal(true) })]);
+const MAX_COPY_LENGTH = 100_000;
+/**
+ * The page's selected text. Text selected inside a text field is not part of the document selection, and a focused
+ * same-origin frame keeps its own; Chrome never copies from a password field, so neither does this.
+ */
+const SELECTION_EXPRESSION = `(() => {
+	let doc = document;
+	let field = doc.activeElement;
+	while (field && (field.tagName === "IFRAME" || field.tagName === "FRAME") && field.contentDocument) {
+		doc = field.contentDocument;
+		field = doc.activeElement;
+	}
+	if (field?.tagName === "INPUT" && field.type === "password") return { password: true };
+	if (field && (field.tagName === "INPUT" || field.tagName === "TEXTAREA")) {
+		const { selectionStart: start, selectionEnd: end } = field;
+		if (start !== null && end !== null && start !== end) return { text: field.value.slice(start, end) };
+	}
+	return { text: String(doc.getSelection() ?? "") };
+})()`;
 
 const KEYS: Record<BrowserKey, { code: string; keyCode: number; text?: string }> = {
 	Backspace: { code: "Backspace", keyCode: 8 },
@@ -146,11 +166,26 @@ export function inputCommands(input: InputMessage): Array<[method: string, param
 	switch (input.type) {
 		case "input.tap": {
 			const at = { x: input.x, y: input.y };
+			const clickCount = input.count ?? 1;
 			return [
 				["Input.dispatchMouseEvent", { type: "mouseMoved", ...at }],
-				["Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 }],
-				["Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 }],
+				["Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount }],
+				["Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount }],
 			];
+		}
+		case "input.drag": {
+			const at = { x: input.x, y: input.y };
+			switch (input.phase) {
+				case "start":
+					return [
+						["Input.dispatchMouseEvent", { type: "mouseMoved", ...at }],
+						["Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", buttons: 1, clickCount: 1 }],
+					];
+				case "move":
+					return [["Input.dispatchMouseEvent", { type: "mouseMoved", ...at, button: "left", buttons: 1 }]];
+				case "end":
+					return [["Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 }]];
+			}
 		}
 		case "input.scroll":
 			return [
@@ -444,8 +479,28 @@ class Service implements BrowserService {
 					this.#announceControl(viewer.tabId);
 				}
 				return;
+			case "clipboard.copy":
+				this.#input(viewer, async (cdp, sessionId) => {
+					const result = await cdp.send(
+						"Runtime.evaluate",
+						{ expression: SELECTION_EXPRESSION, returnByValue: true },
+						sessionId,
+						this.#answerTimeoutMs,
+					);
+					const selection = SelectionSchema.safeParse(EvaluateSchema.parse(result).result.value);
+					if (!selection.success) viewer.error("unavailable", "Could not read the selection");
+					else if ("password" in selection.data) viewer.error("forbidden", "Chrome doesn't copy from password fields");
+					else if (!selection.data.text) viewer.error("bad_request", "Select text on the page first");
+					else if (selection.data.text.length > MAX_COPY_LENGTH)
+						viewer.error("bad_request", "That selection is too long to copy");
+					else viewer.out.send({ type: "clipboard", text: selection.data.text });
+				});
+				return;
 			default:
-				this.#input(viewer, message);
+				this.#input(viewer, async (cdp, sessionId) => {
+					for (const [method, params] of inputCommands(message))
+						await cdp.send(method, params, sessionId, this.#answerTimeoutMs);
+				});
 		}
 	}
 
@@ -544,7 +599,8 @@ class Service implements BrowserService {
 			.then(() => this.#scheduleTabs());
 	}
 
-	#input(viewer: Viewer, input: InputMessage): void {
+	/** Runs `work` on the watched tab after the input already queued, so a copy sees the selection a drag made. */
+	#input(viewer: Viewer, work: (cdp: CdpConnection, sessionId: string) => Promise<void>): void {
 		const tabId = viewer.tabId;
 		const stream = tabId ? this.#streams.get(tabId) : undefined;
 		if (!tabId || this.#controllers.get(tabId) !== viewer) {
@@ -561,8 +617,7 @@ class Service implements BrowserService {
 		stream.input = stream.input.then(async () => {
 			if (generation !== stream.inputGeneration) return;
 			try {
-				for (const [method, params] of inputCommands(input))
-					await cdp.send(method, params, sessionId, this.#answerTimeoutMs);
+				await work(cdp, sessionId);
 			} catch (error) {
 				if (generation !== stream.inputGeneration) return;
 				stream.inputGeneration++;

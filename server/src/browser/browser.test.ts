@@ -14,6 +14,8 @@ class FakeRelay {
 	probes = 0;
 	extensionConnected = true;
 	visibility = "visible";
+	/** What the page's selection check answers. */
+	selection: unknown = { text: "" };
 	/** Methods Chrome never answers: captures while the Mac is locked, input and page checks on a covered window. */
 	readonly unanswered = new Set<string>();
 	/** Sessions whose page reports itself hidden, as a tab behind another in its window. */
@@ -80,6 +82,7 @@ class FakeRelay {
 			case "Target.attachToTarget":
 				return { sessionId: `S-${String(params.targetId)}` };
 			case "Runtime.evaluate":
+				if (String(params.expression).includes("getSelection")) return { result: { value: this.selection } };
 				return { result: { type: "string", value: this.hiddenTabs.has(sessionId ?? "") ? "hidden" : this.visibility } };
 			case "Page.captureScreenshot":
 				return { data: "c25hcHNob3Q=" };
@@ -244,6 +247,56 @@ describe("browser service", () => {
 		expect(first.of("control").at(-1)?.control).toEqual({ kind: "other", deviceName: "iPad" });
 		second.viewer.close();
 		expect(first.of("control").at(-1)?.control).toEqual({ kind: "none" });
+	});
+
+	test("copy reads the selection after the input before it, for the phone in control only", async () => {
+		const { relay, service } = setup();
+		relay.start();
+		const first = new Phone(service, "iPhone");
+		const second = new Phone(service, "iPad");
+		await watchFirstTab(first, relay);
+		second.send({ type: "watch", tabId: "PAGEa.1", maxWidth: 1170 });
+		first.send({ type: "control.take" });
+		relay.selection = { text: "ABC-123" };
+
+		second.send({ type: "clipboard.copy" });
+		expect(second.of("error").at(-1)?.error.code).toBe("forbidden");
+
+		first.send({ type: "input.drag", phase: "start", x: 5, y: 6 });
+		first.send({ type: "input.drag", phase: "move", x: 50, y: 6 });
+		first.send({ type: "input.drag", phase: "end", x: 80, y: 6 });
+		first.send({ type: "clipboard.copy" });
+		await until(() => first.of("clipboard").length === 1);
+		expect(first.of("clipboard")[0]).toEqual({ type: "clipboard", text: "ABC-123" });
+		expect(second.of("clipboard")).toEqual([]);
+		const order = relay.commands.map((command) =>
+			command.method === "Runtime.evaluate" && String(command.params.expression).includes("getSelection")
+				? "copy"
+				: String(command.params.type ?? ""),
+		);
+		expect(order.indexOf("copy")).toBeGreaterThan(order.indexOf("mouseReleased"));
+		expect(relay.sent("Input.dispatchMouseEvent").map(({ params }) => [params.type, params.x, params.buttons])).toEqual(
+			[
+				["mouseMoved", 5, undefined],
+				["mousePressed", 5, 1],
+				["mouseMoved", 50, 1],
+				["mouseReleased", 80, undefined],
+			],
+		);
+
+		relay.selection = { password: true };
+		first.send({ type: "clipboard.copy" });
+		await until(() => first.of("error").length === 1);
+		expect(first.of("error")[0]?.error).toEqual({
+			code: "forbidden",
+			message: "Chrome doesn't copy from password fields",
+		});
+
+		relay.selection = { text: "" };
+		first.send({ type: "clipboard.copy" });
+		await until(() => first.of("error").length === 2);
+		expect(first.of("error")[1]?.error).toEqual({ code: "bad_request", message: "Select text on the page first" });
+		expect(first.of("clipboard")).toHaveLength(1);
 	});
 
 	test("a background tab is shown as stills, a static front tab keeps its frame", async () => {

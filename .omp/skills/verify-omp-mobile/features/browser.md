@@ -7,6 +7,7 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
 - `browser-entry`: the header `Browser` button appears while `GET /v1/browser` is not `relay_offline`; question and text cards show `Open browser`, approval cards do not. **Exercised** (`browser-live-view.yaml` up to `browser-01-question`, against the real relay).
 - `browser-watch`: the screen auto-watches the tab Chrome shows in front (the server marks it `front`) and shows its frames, title in the header, tab count chip `Tabs`; with no tab in front it shows the tab list. **Exercised** with the fake relay (`browser-control.yaml`), and the tab-list case against the real relay.
 - `browser-control`: `Take control` → `Hand back`; a tap on `Browser tab` sends `mouseMoved`/`mousePressed`/`mouseReleased` at the matching CSS pixel; `Keyboard` + typing sends one `Input.insertText` per character; erasing sends `Backspace`; `Tab key`/`Escape key`/arrow buttons send key events; the key row rides above the keyboard. **Exercised** with the fake relay.
+- `browser-clipboard`: a double tap sends `clickCount` 2; holding still starts a selection (`mousePressed` with `buttons` 1, moves, `mouseReleased` on lift); `Copy` puts the page's selection on the phone's pasteboard (refused in password fields and with nothing selected, as a toast); iOS's `Paste` control sends the pasteboard as one `Input.insertText` with no permission prompt. **Exercised** with the fake relay (`browser-control.yaml`); selecting, copying, and pasting in real Chrome proved at the server API.
 - `browser-picker`: `Tabs` opens the picker with `<title>, <host>` rows; picking one watches it. **Exercised** with the fake relay.
 - `browser-not-drawing`: with the Mac's screen locked, or on a tab Chrome put to sleep in the background (its page never answers), the screen says `Chrome isn't drawing this tab` with `Bring to front` (or keeps the last frame with `Not updating. …`) and stays on the tab. **Exercised** against the real relay.
 - `browser-unavailable`: `Browser relay isn't running` (nothing on the relay port) and `Chrome isn't connected` (relay up, no extension). Recipe-only in the app; covered by `server/src/browser/browser.test.ts`.
@@ -24,7 +25,7 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
    maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/browser-control -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION=<session row regex>' .omp/skills/verify-omp-mobile/flows/browser-control.yaml
    ```
 
-4. Save the relay's output (`read proc://omp-mobile-verify-relay-<RUN_ID>`). It must show, in order, `Target.activateTarget`, three `Input.dispatchMouseEvent` at the frame's centre (`x` 600, `y` about 374 for the fixture's 1200x749 viewport), five single-character `Input.insertText` (`h`, `e`, `l`, `l`, `o`), then `keyDown`/`keyUp` for `Backspace` and `Tab`.
+4. Save the relay's output (`read proc://omp-mobile-verify-relay-<RUN_ID>`). It must show, in order, `Target.activateTarget`, three `Input.dispatchMouseEvent` at the frame's centre (`x` 600, `y` about 374 for the fixture's 1200x749 viewport), five single-character `Input.insertText` (`h`, `e`, `l`, `l`, `o`), `keyDown`/`keyUp` for `Backspace` and `Tab`, one `Input.insertText` with the pasteboard text, a click then a `clickCount` 2 click, `mousePressed` with `buttons` 1 then `mouseReleased`, and `CMD copy`. Set the pasteboard before the flow (`printf '<text>' | xcrun simctl pbcopy <SIM_UDID>`); afterwards `xcrun simctl pbpaste <SIM_UDID>` must print `Fake selection`.
 
 ### App against real Chrome
 
@@ -43,4 +44,5 @@ The agent's reply must be `<TOKEN>`: the phone tapped the fixture's button (whic
 - Primary buttons read as `<SF Symbol>, <title>`: match `.*, Take control` and `.*, Hand back`.
 - The New session screen's browse button is `move, Browse`; `.*Browse.*` also matches session rows titled `…Browser…`.
 - Maestro evaluates `${…}` inside `inputText` strings, so pass a prompt containing braces through an env variable (`PROMPT`).
+- While frames stream, the screen never settles and Maestro takes several seconds per step, longer than a 3.5 s toast; assert results (pasteboard, relay output) rather than toasts.
 - The verify server is a separate process: restart it after server changes and after editing `config.json`.

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, PanResponder, ScrollView, StyleSheet, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
 import { toCssPoint, type ViewerFrame } from "../data/browser";
 
 const TAP_SLOP = 10;
 const TAP_MS = 300;
+/** Holding a finger still this long starts selecting text instead of scrolling. */
+const HOLD_MS = 450;
+/** A tap this soon after another, this close to it, continues a double or triple click. */
+const MULTI_TAP_MS = 350;
+const MULTI_TAP_SLOP = 24;
 
 type Slot = 0 | 1;
 
@@ -13,6 +19,8 @@ interface Gesture {
 	y: number;
 	startedAt: number;
 	dragging: boolean;
+	/** A hold started a text selection: the finger drags Chrome's held mouse button instead of scrolling. */
+	selecting: boolean;
 	/** A second finger joined: the native pinch owns the gesture and nothing is sent. */
 	pinching: boolean;
 	/** Gesture translation already accounted for, in screen points. */
@@ -28,8 +36,9 @@ interface Gesture {
  * the next frame and becomes visible only once loaded, so the picture never blanks. Each frame is reported through
  * `onDisplayed` once it is on screen (or skipped), which is the server's cue to send the next one.
  *
- * While `controlling`, one finger taps and scrolls the page; pinching still zooms locally. Otherwise every touch
- * only pans and zooms the picture.
+ * While `controlling`, one finger taps and scrolls the page; a double or triple tap selects a word or paragraph, and
+ * holding still before dragging selects text. Pinching still zooms locally. Otherwise every touch only pans and
+ * zooms the picture.
  */
 export function BrowserFrameView({
 	frame,
@@ -38,13 +47,15 @@ export function BrowserFrameView({
 	onDisplayed,
 	onTap,
 	onScroll,
+	onDrag,
 }: {
 	frame: ViewerFrame;
 	controlling: boolean;
 	reconnecting: boolean;
 	onDisplayed(frame: ViewerFrame): void;
-	onTap(x: number, y: number): void;
+	onTap(x: number, y: number, count: number): void;
 	onScroll(x: number, y: number, dx: number, dy: number): void;
+	onDrag(phase: "start" | "move" | "end", x: number, y: number): void;
 }) {
 	const [layoutWidth, setLayoutWidth] = useState(0);
 	const [slots, setSlots] = useState<[ViewerFrame | null, ViewerFrame | null]>([null, null]);
@@ -52,10 +63,10 @@ export function BrowserFrameView({
 	const frontRef = useRef<Slot>(0);
 	const loading = useRef<ViewerFrame | null>(null);
 	const pending = useRef<ViewerFrame | null>(null);
-	const callbacks = useRef({ onDisplayed, onTap, onScroll });
+	const callbacks = useRef({ onDisplayed, onTap, onScroll, onDrag });
 	useEffect(() => {
-		callbacks.current = { onDisplayed, onTap, onScroll };
-	}, [onDisplayed, onTap, onScroll]);
+		callbacks.current = { onDisplayed, onTap, onScroll, onDrag };
+	}, [onDisplayed, onTap, onScroll, onDrag]);
 
 	const load = useCallback((next: ViewerFrame) => {
 		loading.current = next;
@@ -104,9 +115,22 @@ export function BrowserFrameView({
 	const responder = useMemo(() => {
 		let gesture: Gesture | null = null;
 		let animationFrame: number | null = null;
+		let holdTimer: ReturnType<typeof setTimeout> | undefined;
+		let lastTap: { at: number; x: number; y: number; count: number } | null = null;
+		/** The CSS pixel under the finger, `dx`/`dy` screen points from where the gesture started. */
+		const pointAt = (start: Gesture, dx: number, dy: number) => {
+			const { viewport: size, layoutWidth: width, zoom } = live.current;
+			return toCssPoint({ x: start.x + dx / zoom, y: start.y + dy / zoom }, width, size);
+		};
 		const flush = () => {
 			animationFrame = null;
-			if (!gesture || (!gesture.queuedDx && !gesture.queuedDy)) return;
+			if (!gesture) return;
+			if (gesture.selecting) {
+				const point = pointAt(gesture, gesture.seenDx, gesture.seenDy);
+				callbacks.current.onDrag("move", point.x, point.y);
+				return;
+			}
+			if (!gesture.queuedDx && !gesture.queuedDy) return;
 			const { viewport: size, layoutWidth: width, zoom } = live.current;
 			if (width <= 0) return;
 			// Screen points → unzoomed layout points → CSS pixels. Dragging up scrolls the page down, as on a touch screen.
@@ -120,31 +144,56 @@ export function BrowserFrameView({
 			if (animationFrame !== null) cancelAnimationFrame(animationFrame);
 			animationFrame = null;
 		};
+		const endSelection = (ended: Gesture, dx: number, dy: number) => {
+			cancelFlush();
+			const point = pointAt(ended, dx, dy);
+			callbacks.current.onDrag("end", point.x, point.y);
+		};
 		return PanResponder.create({
 			onStartShouldSetPanResponder: () => live.current.controlling,
 			onMoveShouldSetPanResponder: () => live.current.controlling,
 			onPanResponderTerminationRequest: () => false,
 			onPanResponderGrant: (event) => {
-				gesture = {
+				const started: Gesture = {
 					x: event.nativeEvent.locationX,
 					y: event.nativeEvent.locationY,
 					startedAt: Date.now(),
 					dragging: false,
+					selecting: false,
 					pinching: false,
 					seenDx: 0,
 					seenDy: 0,
 					queuedDx: 0,
 					queuedDy: 0,
 				};
+				gesture = started;
+				clearTimeout(holdTimer);
+				holdTimer = setTimeout(() => {
+					if (gesture !== started || started.dragging || started.pinching) return;
+					started.selecting = true;
+					void Haptics.selectionAsync();
+					const point = pointAt(started, started.seenDx, started.seenDy);
+					callbacks.current.onDrag("start", point.x, point.y);
+				}, HOLD_MS);
 			},
 			onPanResponderMove: (_event, state) => {
 				if (!gesture || gesture.pinching) return;
 				if (state.numberActiveTouches > 1) {
+					clearTimeout(holdTimer);
+					if (gesture.selecting) endSelection(gesture, gesture.seenDx, gesture.seenDy);
+					gesture.selecting = false;
 					gesture.pinching = true;
 					cancelFlush();
 					return;
 				}
+				if (gesture.selecting) {
+					gesture.seenDx = state.dx;
+					gesture.seenDy = state.dy;
+					if (animationFrame === null) animationFrame = requestAnimationFrame(flush);
+					return;
+				}
 				if (!gesture.dragging && Math.hypot(state.dx, state.dy) < TAP_SLOP) return;
+				clearTimeout(holdTimer);
 				gesture.dragging = true;
 				gesture.queuedDx += state.dx - gesture.seenDx;
 				gesture.queuedDy += state.dy - gesture.seenDy;
@@ -153,23 +202,36 @@ export function BrowserFrameView({
 				if (animationFrame === null) animationFrame = requestAnimationFrame(flush);
 			},
 			onPanResponderRelease: (_event, state) => {
+				clearTimeout(holdTimer);
 				const ended = gesture;
-				if (!ended || ended.pinching) {
-					gesture = null;
-					cancelFlush();
-					return;
-				}
-				if (ended.dragging) {
+				if (ended?.selecting) endSelection(ended, state.dx, state.dy);
+				else if (ended?.dragging && !ended.pinching) {
 					cancelFlush();
 					flush();
-				} else if (Date.now() - ended.startedAt < TAP_MS && Math.hypot(state.dx, state.dy) < TAP_SLOP) {
+				} else if (
+					ended &&
+					!ended.pinching &&
+					Date.now() - ended.startedAt < TAP_MS &&
+					Math.hypot(state.dx, state.dy) < TAP_SLOP
+				) {
+					const now = Date.now();
+					const count =
+						lastTap &&
+						now - lastTap.at < MULTI_TAP_MS &&
+						Math.hypot(ended.x - lastTap.x, ended.y - lastTap.y) < MULTI_TAP_SLOP
+							? Math.min(3, lastTap.count + 1)
+							: 1;
+					lastTap = { at: now, x: ended.x, y: ended.y, count };
 					const { viewport: size, layoutWidth: width } = live.current;
 					const point = toCssPoint(ended, width, size);
-					callbacks.current.onTap(point.x, point.y);
+					callbacks.current.onTap(point.x, point.y, count);
 				}
 				gesture = null;
+				cancelFlush();
 			},
 			onPanResponderTerminate: () => {
+				clearTimeout(holdTimer);
+				if (gesture?.selecting) endSelection(gesture, gesture.seenDx, gesture.seenDy);
 				gesture = null;
 				cancelFlush();
 			},
