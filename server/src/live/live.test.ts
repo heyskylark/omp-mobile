@@ -342,6 +342,51 @@ for await (const line of console) {
 			await rm(dir, { recursive: true, force: true });
 		}
 	});
+
+	test("a background task agent's progress after its task call returned leaves the call finished", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		const progress = (status: string) =>
+			`{ details: { async: { state: "${status}" }, progress: [{ id: "Alpha", status: "${status}" }] } }`;
+		// OMP's async `task` call returns once it spawns; the job keeps reporting on the call until the agent settles.
+		const taskTurn = [
+			`out({ type: "tool_execution_start", toolCallId: call, toolName: "task", args: {} });`,
+			`out({ type: "tool_execution_end", toolCallId: call, toolName: "task", result: ${progress("running")} });`,
+			`out({ type: "tool_execution_update", toolCallId: call, toolName: "task", args: {}, partialResult: ${progress("completed")} });`,
+		].join("\n");
+		const bashTurn = fakeOmp.slice(
+			fakeOmp.indexOf('\tout({ type: "tool_execution_start"'),
+			fakeOmp.indexOf('\tout({ type: "agent_end"'),
+		);
+		await writeFile(ompPath, fakeOmp.replace(bashTurn, `${taskTurn}\n`), { mode: 0o755 });
+		const hub = createLiveHub({
+			history: stubHistory(),
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs: 60_000,
+		});
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
+			const ready = () => {
+				const liveness = hub.overlay(sessionId).liveness;
+				return liveness.kind === "server" && liveness.phase === "ready";
+			};
+			await until(ready, "the first turn to settle");
+			const tools: TimelineItem[] = [];
+			hub.subscribe(sessionId, (message) => {
+				if (message.type === "timeline.upsert") tools.push(...message.items.filter((item) => item.kind === "tool"));
+			});
+			await hub.prompt(sessionId, { operationId: "op-2", text: "second" });
+			await until(() => tools.some((item) => item.kind === "tool" && item.state === "succeeded"), "the call to end");
+			await until(ready, "the second turn to settle");
+			expect(tools.at(-1)).toMatchObject({ id: "t:call-2", state: "succeeded", agentIds: ["Alpha"] });
+			expect((await hub.snapshot(sessionId, 40))?.items).toEqual([]);
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("session_title from the extension", () => {
