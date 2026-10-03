@@ -21,7 +21,9 @@ export function ToastProvider({ children }: PropsWithChildren) {
 					pointerEvents="none"
 					className={`absolute left-5 right-5 top-14 rounded-card border px-4 py-3 ${toast.tone === "error" ? "border-danger bg-[#2A1415]" : "border-border bg-surface-raised"}`}
 				>
-					<Text className="text-center text-[14px] font-medium text-primary">{toast.message}</Text>
+					<Text numberOfLines={3} className="text-center text-[14px] font-medium text-primary">
+						{toast.message}
+					</Text>
 				</View>
 			) : null}
 		</ToastContext.Provider>

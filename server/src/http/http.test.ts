@@ -366,6 +366,36 @@ describe("HTTP API", () => {
 		options.browser.stop();
 	});
 
+	test("browser messages the server cannot read get a short reason, not the parse error", async () => {
+		const { options, token } = await fixture();
+		service = await startHttp(options);
+		const ws = new WebSocket(`ws://127.0.0.1:${options.config.port}/v1/browser/stream`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		const errors: BrowserServerMessage[] = [];
+		const done = Promise.withResolvers<void>();
+		ws.onmessage = (event) => {
+			const message = JSON.parse(String(event.data)) as BrowserServerMessage;
+			if (message.type !== "error") return;
+			errors.push(message);
+			if (errors.length === 3) done.resolve();
+		};
+		ws.onerror = () => done.reject(new Error("WebSocket failed"));
+		ws.onopen = () => {
+			ws.send(JSON.stringify({ type: "clipboard.paste" }));
+			ws.send("{not json");
+			ws.send(JSON.stringify({ type: "input.text", text: "" }));
+		};
+		await done.promise;
+		expect(errors.map((message) => message.type === "error" && message.error)).toEqual([
+			{ code: "bad_request", message: "Update OMP Mobile on this Mac to use this" },
+			{ code: "bad_request", message: "Invalid message" },
+			{ code: "bad_request", message: expect.not.stringContaining("\n") },
+		]);
+		ws.close();
+		options.browser.stop();
+	});
+
 	test("filters page 1 live sessions like history and passes the filter to history", async () => {
 		const { options, hub, token } = await fixture();
 		const requests: Parameters<History["listSessions"]>[0][] = [];
