@@ -9,6 +9,8 @@ The user follows a running session, answers the agent's `ask` questions and tool
 - `live-question`: question card with one button per option; `Other…` or `Your response` field plus `Send` for text answers. **Exercised** (option `Blue`, `live-interactions.yaml`); custom text recipe-only.
 - `live-followup`: `Message OMP` + `Send` on an existing session. **Exercised** (every step of `live-interactions.yaml`).
 - `live-stop`: the composer shows `Stop` only while a *server* session is starting, working, or settling; tapping it aborts the turn. **Exercised.**
+- `live-outgoing`: a sent message shows at once at the bottom of the transcript as `<text>, Sending…`, then `<text>, Sent`, until the transcript holds it. A steer stays `Sent` while OMP queues it. **Exercised** (`optimistic-send.yaml`).
+- `live-outgoing-failed`: `<text>, Not sent. Tap to retry.` when the request fails; `<text>, Not delivered. Tap to retry.` when the computer took it but the session went idle for 4 seconds without it. Tapping opens `Not sent` or `Not delivered` with `Try Again`, `Edit`, `Delete`, and `Cancel`. **Exercised** (`optimistic-recover.yaml`, `Try Again` only); `Edit` and `Delete` recipe-only.
 - `live-handoff`: `Session menu` (server-managed sessions only) → `Hand off to computer?` → `Hand off` → toast `Ready to resume on your computer`; the session becomes idle. **Exercised.**
 - `live-terminal`: a session started in a terminal shows `In terminal` and accepts phone prompts and approvals over Collab. **Exercised** (`prompt-approve.yaml` against a supervised TUI).
 - `live-notification-actions`: approval notifications offer `Approve` / `Deny`; question notifications offer `Reply` (text field, `Send`) / `Open`. Physical device only.
@@ -30,6 +32,13 @@ Preconditions: app paired; the transcript of a server-managed session is open, e
   ```
 
   Screenshots `live-01-approval-pending` … `live-08-handed-off`. Second observation: `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=80'` must show the denied `bash` item `failed`, an `ask` item `succeeded` with `User selected: Blue`, the story turn with no text (aborted), `pending: []`, and `liveness.kind: "idle"`.
+- **Outgoing messages, failure, and retry** (three small model turns, one server restart):
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/optimistic -e MACHINE_NAME=<MACHINE_NAME> -e 'PROJECT=<regex-escaped PROJECT path>' -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/optimistic-send.yaml
+  ```
+
+  Then `write proc://omp-mobile-verify-server-<RUN_ID>/kill`, run `optimistic-recover.yaml` with `-e PHASE=offline -e TOKEN=<another-word>`, start the server again as in Launch step 2, and run `optimistic-recover.yaml` with `-e PHASE=online` and the same `TOKEN`. Stopping the server ends its OMP process with the steer still queued, so the steer reads `Not delivered` once the phone sees the session idle. Screenshots `optimistic-01-after-send` … `optimistic-03-steer-queued` and `recover-01-not-sent` … `recover-04-delivered`. Second observation: `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=80'` holds each user message exactly once: the first prompt, `Also say the word pelican.`, and `Reply with the single word <TOKEN>.`. Maestro settles the screen before each step, so it misses the first prompt's own bubble, which lasts until OMP records the prompt with the first reply. To see it, record the screen with `xcrun simctl io <SIM_UDID> recordVideo <EVIDENCE>/optimistic.mp4` during the first flow.
 - **Terminal session:** start a supervised PTY process (OMP `bash` with `name` `omp-mobile-verify-tui-<RUN_ID>`; `ready` log `collab:`). The PTY replaces `scripts/pty-run.py`, which only exists because `Bun.spawn` has no PTY:
 
   ```sh

@@ -1,0 +1,61 @@
+# After optimistic-send.yaml, around a restart of the run's server. PHASE=offline (server stopped): a new message
+# fails and reads "Not sent". PHASE=online (server back): the steer the old OMP process held never reached the
+# transcript, so it reads "Not delivered"; Try Again on each failed bubble delivers both. The retried steer resumes
+# the session, and any tool call it makes is denied so its approval card cannot cover the bubbles.
+# env: PHASE (offline | online), TOKEN (unique word per run)
+appId: com.heyskylark.ompmobile
+name: optimistic-recover
+---
+- runFlow:
+    when:
+      true: ${PHASE == 'offline'}
+    commands:
+      - tapOn: "Message OMP"
+      - inputText: "Reply with the single word ${TOKEN}."
+      - tapOn: "Steer|Send"
+      - extendedWaitUntil:
+          visible: ".*, Not sent\\. Tap to retry\\."
+          timeout: 30000
+      - takeScreenshot: recover-01-not-sent
+- runFlow:
+    when:
+      true: ${PHASE == 'online'}
+    commands:
+      - hideKeyboard
+      - extendedWaitUntil:
+          visible: ".*, Not delivered\\. Tap to retry\\."
+          timeout: 60000
+      - takeScreenshot: recover-02-not-delivered
+      - tapOn: ".*, Not delivered\\. Tap to retry\\."
+      - extendedWaitUntil:
+          visible: "Try Again"
+          timeout: 10000
+      - takeScreenshot: recover-03-retry-alert
+      - tapOn: "Try Again"
+      - extendedWaitUntil:
+          notVisible: ".*Not delivered.*"
+          timeout: 10000
+      - repeat:
+          while:
+            notVisible: "Send"
+          commands:
+            - runFlow:
+                when:
+                  visible: "Allow tool: .*"
+                commands:
+                  - tapOn: "Deny"
+      - hideKeyboard
+      - runFlow:
+          when:
+            visible: "Scroll to bottom"
+          commands:
+            - tapOn: "Scroll to bottom"
+      - tapOn: ".*, Not sent\\. Tap to retry\\."
+      - extendedWaitUntil:
+          visible: "Try Again"
+          timeout: 10000
+      - tapOn: "Try Again"
+      - extendedWaitUntil:
+          notVisible: ".*, (Not sent\\. Tap to retry\\.|Sending…|Sent)"
+          timeout: 60000
+      - takeScreenshot: recover-04-delivered
