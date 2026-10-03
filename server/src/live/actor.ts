@@ -536,6 +536,8 @@ export class SessionActor {
 		if (typeof frame.toolCallId !== "string" || typeof frame.toolName !== "string") return;
 		const old = this.#live.get(`t:${frame.toolCallId}`);
 		const previous = old?.kind === "tool" ? old : undefined;
+		// A background `task` job keeps reporting progress on its call after the call returned; the call stays finished.
+		if (state === "running" && previous && previous.state !== "running") return;
 		const argsIntent =
 			frame.args && typeof frame.args === "object" && typeof (frame.args as Frame).i === "string"
 				? ((frame.args as Frame).i as string)
