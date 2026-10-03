@@ -8,6 +8,7 @@ import { Composer, useComposerDraft } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
 import { OmpApi, operationId } from "../../../data/api";
 import { useMachine } from "../../../data/machines";
+import { sessionOutbox } from "../../../data/outbox";
 import { useSkills } from "../../../data/skills";
 
 export default function NewSessionScreen() {
@@ -54,6 +55,7 @@ export default function NewSessionScreen() {
 				...(modelRole === "default" ? {} : { modelRole }),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+			sessionOutbox(machineId, created.sessionId).created(prompt.trim(), images);
 			draft.clear();
 			router.replace({
 				pathname: "/machine/[machineId]/session/[sessionId]",

@@ -1,0 +1,36 @@
+# Starts a session whose bash call waits for approval, then steers it: OMP holds the steer in its queue, so the
+# phone shows its own outgoing bubble marked Sent. Maestro settles the screen before each step, too slowly to catch
+# the first prompt's bubble (OMP records that prompt with the first reply); record the simulator's screen to see it.
+# Leaves the turn waiting for approval with the steer queued, the start of optimistic-recover.yaml.
+# env: MACHINE_NAME, PROJECT (absolute scratch project path, regex-escaped), TOKEN (unique word per run)
+appId: com.heyskylark.ompmobile
+name: optimistic-send
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*${PROJECT}.*"
+- tapOn: "Message OMP"
+- inputText: "Run bash: echo ${TOKEN}. Then reply with the single word finished."
+- tapOn: "Send"
+- takeScreenshot: optimistic-01-after-send
+- extendedWaitUntil:
+    visible: "Allow tool: .*"
+    timeout: 120000
+- extendedWaitUntil:
+    notVisible: ".*, Sent"
+    timeout: 20000
+- takeScreenshot: optimistic-02-first-prompt-in-transcript
+- tapOn: "Message OMP"
+- inputText: "Also say the word pelican."
+- tapOn: "Steer"
+- extendedWaitUntil:
+    visible: "Also say the word pelican\\., Sent"
+    timeout: 15000
+- takeScreenshot: optimistic-03-steer-queued

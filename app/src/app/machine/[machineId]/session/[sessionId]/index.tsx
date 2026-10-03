@@ -5,20 +5,27 @@ import * as Haptics from "expo-haptics";
 import { KeyboardGestureArea, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { AgentSummary, InteractionResponse, ModelRole, ServerMessage } from "@omp-mobile/protocol";
+import {
+	type AgentSummary,
+	type InteractionResponse,
+	MAX_PROMPT_IMAGES,
+	type ModelRole,
+	type ServerMessage,
+} from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
 import { ChatImageProvider } from "../../../../../components/chat-image";
 import { ChatList } from "../../../../../components/chat-list";
 import { Composer, useComposerDraft } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../../components/session-meta";
-import { TimelineRow } from "../../../../../components/timeline";
+import { OutgoingRow, TimelineRow } from "../../../../../components/timeline";
 import { ErrorState, Icon, Loading } from "../../../../../components/ui";
 import { useToast } from "../../../../../components/toast";
 import { runningCount } from "../../../../../data/agents";
 import { OmpApi, operationId } from "../../../../../data/api";
 import { acquireMachineSocket } from "../../../../../data/live";
 import { useMachine } from "../../../../../data/machines";
+import { type OutgoingMessage, sessionOutbox, UNDELIVERED_AFTER_MS, useOutgoing } from "../../../../../data/outbox";
 import { sessionViewReducer, type SessionViewState } from "../../../../../data/session-reducer";
 import { useSkills } from "../../../../../data/skills";
 
@@ -35,7 +42,8 @@ export default function SessionScreen() {
 	const api = useMemo(() => (machine ? new OmpApi(machine) : null), [machine]);
 	const [view, dispatch] = useReducer(sessionViewReducer, { kind: "loading" } satisfies SessionViewState);
 	const draft = useComposerDraft(`${machineId}/${sessionId}`);
-	const [sending, setSending] = useState(false);
+	const outbox = useMemo(() => sessionOutbox(machineId, sessionId), [machineId, sessionId]);
+	const outgoing = useOutgoing(outbox);
 	const [responding, setResponding] = useState(false);
 	const [changingRole, setChangingRole] = useState(false);
 	const [browserAvailable, setBrowserAvailable] = useState(false);
@@ -106,6 +114,24 @@ export default function SessionScreen() {
 			release();
 		};
 	}, [machine, sessionId, loadSnapshot, loadBrowserStatus]);
+	const transcript = view.kind === "ready" ? view.items : null;
+	const complete = view.kind === "ready" && !view.olderCursor;
+	// Before paint, so a message never shows both as sent and in the transcript.
+	useLayoutEffect(() => {
+		if (transcript) outbox.reconcile(transcript, complete);
+	}, [outbox, transcript, complete]);
+	const loaded = view.kind === "ready";
+	const working =
+		view.kind === "ready" &&
+		view.session.liveness.kind === "server" &&
+		["starting", "working", "settling"].includes(view.session.liveness.phase);
+	useEffect(() => {
+		if (!loaded) return;
+		outbox.observeTurn(working);
+		if (working) return;
+		const timer = setTimeout(() => outbox.expireUndelivered(), UNDELIVERED_AFTER_MS);
+		return () => clearTimeout(timer);
+	}, [outbox, loaded, working]);
 
 	const handoff = useCallback(() => {
 		if (!api) return;
@@ -177,30 +203,30 @@ export default function SessionScreen() {
 			dispatch({ type: "older.error" });
 		}
 	};
-	const working =
-		view.session.liveness.kind === "server" &&
-		["starting", "working", "settling"].includes(view.session.liveness.phase);
 	const send = async () => {
 		const text = draft.text.trim();
 		const images = draft.images;
-		if ((!text && !images.length) || sending) return;
+		if (!text && !images.length) return;
 		draft.setText("");
 		draft.setImages([]);
-		setSending(true);
+		outbox.send(api, text, images, view.items);
 		await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-		try {
-			await api.prompt(sessionId, {
-				operationId: operationId(),
-				text,
-				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
-			});
-		} catch (error) {
-			draft.setText(text);
-			draft.setImages(images);
-			show(error instanceof Error ? error.message : "Message not sent", "error");
-		} finally {
-			setSending(false);
-		}
+	};
+	const resolveFailed = (message: OutgoingMessage) => {
+		if (message.status.kind !== "failed") return;
+		Alert.alert(message.status.reason === "undelivered" ? "Not delivered" : "Not sent", message.status.error, [
+			{ text: "Try Again", onPress: () => outbox.retry(api, message.operationId, view.items) },
+			{
+				text: "Edit",
+				onPress: () => {
+					if (!outbox.remove(message.operationId)) return;
+					draft.setText((current) => (current ? `${current}\n${message.text}` : message.text));
+					draft.setImages((current) => [...current, ...message.images].slice(0, MAX_PROMPT_IMAGES));
+				},
+			},
+			{ text: "Delete", style: "destructive", onPress: () => outbox.remove(message.operationId) },
+			{ text: "Cancel", style: "cancel" },
+		]);
 	};
 	const respond = async (interactionId: string, response: InteractionResponse) => {
 		setResponding(true);
@@ -263,6 +289,20 @@ export default function SessionScreen() {
 						composer={{ height: composerHeight, keyboardOffset }}
 						onEndReached={() => void loadOlder()}
 						onEndReachedThreshold={0.5}
+						ListHeaderComponent={
+							outgoing.length ? (
+								<View>
+									{outgoing.map((message) => (
+										<OutgoingRow
+											key={message.operationId}
+											message={message}
+											skills={skillNames}
+											onPressFailed={() => resolveFailed(message)}
+										/>
+									))}
+								</View>
+							) : null
+						}
 						ListFooterComponent={
 							view.loadingOlder ? (
 								<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>
@@ -295,7 +335,7 @@ export default function SessionScreen() {
 						onSend={() => void send()}
 						working={working}
 						onStop={stop}
-						disabled={sending}
+						disabled={outgoing.some((message) => message.status.kind === "sending")}
 						images={draft.images}
 						onAttach={draft.attach}
 						onPasteImages={draft.paste}
