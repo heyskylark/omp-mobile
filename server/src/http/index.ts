@@ -198,6 +198,14 @@ function errorResponse(error: unknown): Response {
 	);
 }
 
+/** An unknown `type` almost always means the app is newer than this server, so the reply says how to fix it. */
+function socketMessageError(error: unknown): string {
+	if (!(error instanceof z.ZodError)) return "Invalid message";
+	if (error.issues.some((issue) => issue.path.length === 1 && issue.path[0] === "type"))
+		return "Update OMP Mobile on this Mac to use this";
+	return error.issues[0]?.message ?? "Invalid message";
+}
+
 async function body(req: Request): Promise<unknown> {
 	try {
 		return await req.json();
@@ -480,7 +488,7 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 		} catch (error) {
 			sendBrowser(ws, {
 				type: "error",
-				error: { code: "bad_request", message: error instanceof Error ? error.message : "Invalid message" },
+				error: { code: "bad_request", message: socketMessageError(error) },
 			});
 			return;
 		}
@@ -545,7 +553,7 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 				ws.send(
 					JSON.stringify({
 						type: "error",
-						error: { code: "bad_request", message: error instanceof Error ? error.message : "Invalid message" },
+						error: { code: "bad_request", message: socketMessageError(error) },
 					} satisfies ServerMessage),
 				);
 			}
