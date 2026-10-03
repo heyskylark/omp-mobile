@@ -1,8 +1,9 @@
 import type { AgentSummary, Block, TimelineItem } from "@omp-mobile/protocol";
 import { Fragment } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import { useMarkdown } from "react-native-marked";
 import { agentName, statusLabel, toolIsWorking } from "../data/agents";
+import type { OutgoingMessage } from "../data/outbox";
 import { skillSegments } from "../data/skill-draft";
 import { AgentStatusIcon } from "./agent-menu";
 import { useAnchoredToggle } from "./chat-list";
@@ -228,5 +229,46 @@ export function TimelineRow({
 			{item.streaming ? <ActivityIndicator className="mt-1 self-start" size="small" color="#8B93FF" /> : null}
 			{item.error ? <Text className="mt-2 text-caption text-danger">{item.error}</Text> : null}
 		</View>
+	);
+}
+
+const OUTGOING_LABELS = {
+	sending: "Sending…",
+	sent: "Sent",
+	unsent: "Not sent. Tap to retry.",
+	undelivered: "Not delivered. Tap to retry.",
+};
+
+/** A message the user sent that the transcript does not show yet; `onPressFailed` offers retrying a failed one. */
+export function OutgoingRow({
+	message,
+	skills,
+	onPressFailed,
+}: {
+	message: OutgoingMessage;
+	skills?: ReadonlySet<string>;
+	onPressFailed(): void;
+}) {
+	const failed = message.status.kind === "failed";
+	const label = OUTGOING_LABELS[message.status.kind === "failed" ? message.status.reason : message.status.kind];
+	return (
+		<Pressable
+			disabled={!failed}
+			onPress={onPressFailed}
+			accessibilityRole={failed ? "button" : undefined}
+			className="mb-4 max-w-[86%] items-end self-end active:opacity-80"
+		>
+			<View
+				className={`rounded-[18px] bg-surface-raised px-4 py-3 ${message.status.kind === "sending" ? "opacity-60" : ""} ${failed ? "border border-danger" : ""}`}
+			>
+				{message.text ? (
+					<Blocks blocks={[{ kind: "text", text: message.text }]} markdown={false} skills={skills} />
+				) : null}
+				{message.images.map((image) => (
+					<Image key={image.uri} source={{ uri: image.uri }} className="my-1 h-[160px] w-[160px] rounded-card" />
+				))}
+			</View>
+			<Text className={`mt-1 text-[11px] ${failed ? "text-danger" : "text-secondary"}`}>{label}</Text>
+		</Pressable>
 	);
 }
