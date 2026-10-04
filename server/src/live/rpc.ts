@@ -12,6 +12,8 @@ interface ChunkSet {
 	count: number;
 	byteLength: number;
 	parts: Array<string | undefined>;
+	/** `parts` starts sparse and array iteration skips holes, so completeness is counted rather than scanned. */
+	received: number;
 }
 
 export class RpcSupervisor {
@@ -128,15 +130,16 @@ export class RpcSupervisor {
 			return;
 		let set = this.#chunks.get(frame.chunkId);
 		if (!set) {
-			set = { count: frame.count, byteLength: frame.byteLength, parts: new Array(frame.count) };
+			set = { count: frame.count, byteLength: frame.byteLength, parts: new Array(frame.count), received: 0 };
 			this.#chunks.set(frame.chunkId, set);
 		}
 		if (set.count !== frame.count || frame.index < 0 || frame.index >= set.count) {
 			this.#chunks.delete(frame.chunkId);
 			return;
 		}
+		if (set.parts[frame.index] === undefined) set.received += 1;
 		set.parts[frame.index] = frame.data;
-		if (set.parts.some((part) => part === undefined)) return;
+		if (set.received < set.count) return;
 		this.#chunks.delete(frame.chunkId);
 		const bytes = Buffer.concat(set.parts.map((part) => Buffer.from(part!, "base64")));
 		if (bytes.byteLength !== set.byteLength) return;
