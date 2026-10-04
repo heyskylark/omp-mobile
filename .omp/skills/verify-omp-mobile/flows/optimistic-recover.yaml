@@ -1,7 +1,8 @@
 # After optimistic-send.yaml, around a restart of the run's server. PHASE=offline (server stopped): a new message
 # fails and reads "Not sent". PHASE=online (server back): the steer the old OMP process held never reached the
 # transcript, so it reads "Not delivered"; Try Again on each failed bubble delivers both. The retried steer resumes
-# the session, and any tool call it makes is denied so its approval card cannot cover the bubbles.
+# the session, and any tool call it makes is denied so its approval card cannot cover the bubbles. The failed
+# message keeps its place above the steer's reply, so the flow scrolls up to it.
 # env: PHASE (offline | online), TOKEN (unique word per run)
 appId: com.heyskylark.ompmobile
 name: optimistic-recover
@@ -50,6 +51,10 @@ name: optimistic-recover
             visible: "Scroll to bottom"
           commands:
             - tapOn: "Scroll to bottom"
+      - scrollUntilVisible:
+          element: ".*, Not sent\\. Tap to retry\\."
+          direction: UP
+          timeout: 20000
       - tapOn: ".*, Not sent\\. Tap to retry\\."
       - extendedWaitUntil:
           visible: "Try Again"
