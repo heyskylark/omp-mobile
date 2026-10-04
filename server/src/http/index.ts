@@ -19,6 +19,7 @@ import {
 	type ServerMessage,
 	type SessionSummary,
 	type SkillListResponse,
+	type JobListResponse,
 } from "@omp-mobile/protocol";
 import type { BrowserService, BrowserViewer } from "../browser/index.ts";
 import { saveMachineName, type ServerConfig } from "../config.ts";
@@ -27,6 +28,7 @@ import { ProjectPathError } from "../history/directories.ts";
 import { filterSessions, sessionFilter } from "../history/filter.ts";
 import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub } from "../live/api.ts";
+import { InvalidScheduleError, type JobService } from "../jobs/index.ts";
 import type { DeviceStore, StoredDevice } from "../store/devices.ts";
 import { watchTailscale, type TailscaleState } from "../tailscale.ts";
 
@@ -101,6 +103,14 @@ const AgentReportSchema = z.object({
 		}),
 	),
 });
+const NewJobSchema = z.object({
+	name: z.string().trim().min(1).max(80),
+	description: z.string().trim().min(1).max(20_000),
+	schedule: z.string().trim().min(1).max(200),
+	sessionId: z.string().min(1).max(500),
+	cwd: z.string().min(1),
+});
+const UpdateJobSchema = z.object({ status: z.enum(["ACTIVE", "PAUSED"]) });
 const ClientMessageSchema = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("subscribe"), sessionId: z.string().min(1) }),
 	z.object({ type: z.literal("unsubscribe"), sessionId: z.string().min(1) }),
@@ -155,6 +165,7 @@ export interface HttpOptions {
 	browser: BrowserService;
 	adminToken: string;
 	extensionToken: string;
+	jobs: JobService;
 	serverVersion?: string;
 }
 
@@ -163,6 +174,7 @@ type SocketData =
 			kind: "stream";
 			unsubscribers: Map<string, () => void>;
 			unsubscribeBroadcast?: () => void;
+			unsubscribeJobs?: () => void;
 	  }
 	| { kind: "browser"; token: string; deviceName: string; viewer?: BrowserViewer };
 
@@ -188,6 +200,8 @@ function errorResponse(error: unknown): Response {
 		return json({ code: "forbidden", message: error.message } satisfies ApiError, 403);
 	if (error instanceof InvalidHistoryCursorError)
 		return json({ code: "invalid_cursor", message: error.message } satisfies ApiError, 400);
+	if (error instanceof InvalidScheduleError)
+		return json({ code: "bad_request", message: error.message } satisfies ApiError, 400);
 	console.error(error);
 	return json(
 		{
@@ -286,14 +300,19 @@ export function createHttpHandler(
 			if (surface === "app" && (path.startsWith("/admin/") || path.startsWith("/internal/"))) {
 				throw new HttpError(404, "not_found", "Route not found");
 			}
-			if (surface === "loopback" && path === "/internal/extension" && req.method === "POST") {
+			if (surface === "loopback" && path.startsWith("/internal/")) {
 				if (req.headers.get("x-omp-mobile-token") !== options.extensionToken)
 					throw new HttpError(401, "unauthorized", "Invalid extension token");
-				const event = await body(req);
-				const agentReport = AgentReportSchema.safeParse(event);
-				if (agentReport.success) options.hub.ingestAgents(agentReport.data);
-				else options.hub.ingest(ExtensionSchema.parse(event) as ExtensionEvent);
-				return new Response(null, { status: 204 });
+				if (path === "/internal/extension" && req.method === "POST") {
+					const event = await body(req);
+					const agentReport = AgentReportSchema.safeParse(event);
+					if (agentReport.success) options.hub.ingestAgents(agentReport.data);
+					else options.hub.ingest(ExtensionSchema.parse(event) as ExtensionEvent);
+					return new Response(null, { status: 204 });
+				}
+				if (path === "/internal/jobs" && req.method === "POST")
+					return json(await options.jobs.create(NewJobSchema.parse(await body(req))), 201);
+				throw new HttpError(404, "not_found", "Internal route not found");
 			}
 			if (surface === "loopback" && path.startsWith("/admin/")) {
 				if (bearer(req) !== options.adminToken) throw new HttpError(401, "unauthorized", "Invalid admin token");
@@ -408,6 +427,19 @@ export function createHttpHandler(
 				return json({ skills } satisfies SkillListResponse);
 			}
 			if (path === "/v1/usage" && req.method === "GET") return json(await options.hub.usage());
+			if (path === "/v1/jobs" && req.method === "GET")
+				return json({ items: options.jobs.list() } satisfies JobListResponse);
+			const jobMatch = path.match(/^\/v1\/jobs\/([^/]+)$/);
+			if (jobMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+				const id = parsePathParam(jobMatch[1]!);
+				if (req.method === "DELETE") {
+					if (!options.jobs.remove(id)) throw new HttpError(404, "not_found", "Job not found");
+					return new Response(null, { status: 204 });
+				}
+				const job = options.jobs.setStatus(id, UpdateJobSchema.parse(await body(req)).status);
+				if (!job) throw new HttpError(404, "not_found", "Job not found");
+				return json(job);
+			}
 			const agentMatch = path.match(/^\/v1\/sessions\/([^/]+)\/agents\/([^/]+)(\/items)?$/);
 			if (agentMatch && req.method === "GET") {
 				const sessionId = parsePathParam(agentMatch[1]!);
@@ -518,6 +550,9 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 				return;
 			}
 			data.unsubscribeBroadcast = options.hub.onBroadcast((message) => ws.send(JSON.stringify(message)));
+			data.unsubscribeJobs = options.jobs.onChange(() =>
+				ws.send(JSON.stringify({ type: "jobs.changed" } satisfies ServerMessage)),
+			);
 			ws.send(JSON.stringify({ type: "hello", epoch, info: serverInfo(options) } satisfies ServerMessage));
 		},
 		message(ws: Bun.ServerWebSocket<SocketData>, raw: string | Buffer) {
@@ -566,6 +601,7 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			}
 			for (const unsubscribe of data.unsubscribers.values()) unsubscribe();
 			data.unsubscribeBroadcast?.();
+			data.unsubscribeJobs?.();
 		},
 	};
 	const createServer = (hostname: string, surface: "app" | "loopback") => {

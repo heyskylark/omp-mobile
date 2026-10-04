@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import type {
 	AdminStatus,
 	BrowserServerMessage,
+	Job,
+	JobListResponse,
 	ServerMessage,
 	SessionSnapshot,
 	SessionSummary,
@@ -13,6 +15,7 @@ import { createBrowserService } from "../browser/index.ts";
 import type { History } from "../history/api.ts";
 import { ImageStore } from "../history/images.ts";
 import { InvalidHistoryCursorError } from "../history/pager.ts";
+import { createJobService, createJobStore, type JobService, type JobStore } from "../jobs/index.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
 import { createDeviceStore } from "../store/devices.ts";
 import { createHttpHandler, startHttp, type HttpOptions, type HttpService } from "./index.ts";
@@ -154,9 +157,13 @@ const history: History = {
 
 let directory: string | undefined;
 let service: HttpService | undefined;
+let jobs: { service: JobService; store: JobStore } | undefined;
 afterEach(async () => {
 	await service?.stop();
 	service = undefined;
+	jobs?.service.stop();
+	jobs?.store.close();
+	jobs = undefined;
 	if (directory) await rm(directory, { recursive: true, force: true });
 	directory = undefined;
 });
@@ -166,6 +173,8 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 	const devices = createDeviceStore(join(directory, "devices.json"));
 	await devices.load();
 	const hub = new FakeHub();
+	const store = createJobStore(join(directory, "jobs.db"));
+	jobs = { store, service: createJobService({ store, hub, history }) };
 	const options: HttpOptions = {
 		config: {
 			dataDir: directory,
@@ -184,6 +193,7 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 		browser: createBrowserService({ relayUrl: new URL(`http://127.0.0.1:${port + 2}`) }),
 		adminToken: "admin",
 		extensionToken: "extension",
+		jobs: jobs.service,
 	};
 	const pairing = devices.createPairing();
 	const paired = await devices.pair(pairing.code, "Phone");
@@ -203,6 +213,62 @@ describe("HTTP API", () => {
 		expect(
 			(await handler(new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }))).status,
 		).toBe(404);
+	});
+
+	test("only OMP sessions create jobs; paired phones list, pause, resume, and delete them", async () => {
+		const { options, token } = await fixture();
+		const loopback = createHttpHandler(options, "loopback", () => "http://mac:8787");
+		const app = createHttpHandler(options, "app", () => "http://mac:8787");
+		const create = (schedule: string, extensionToken: string, handler = loopback) =>
+			handler(
+				new Request("http://mac/internal/jobs", {
+					method: "POST",
+					headers: { "content-type": "application/json", "x-omp-mobile-token": extensionToken },
+					body: JSON.stringify({
+						name: "Standup notes",
+						description: "Summarize yesterday's commits",
+						schedule,
+						sessionId: "s1",
+						cwd: "/tmp/project",
+					}),
+				}),
+			);
+		expect((await create("0 9 * * MON-FRI", "wrong")).status).toBe(401);
+		expect((await create("0 9 * * MON-FRI", "extension", app)).status).toBe(404);
+		const invalid = await create("every morning", "extension");
+		expect(invalid.status).toBe(400);
+		expect(await invalid.json()).toMatchObject({ code: "bad_request", message: expect.stringContaining("5") });
+		expect((await create("0 0 30 2 *", "extension")).status).toBe(400);
+		expect((await create("* * * * * *", "extension")).status).toBe(400);
+
+		const created = await create(" 0 9 * * MON-FRI ", "extension");
+		expect(created.status).toBe(201);
+		const job = (await created.json()) as Job;
+		expect(job).toMatchObject({
+			name: "Standup notes",
+			status: "ACTIVE",
+			sessionId: "s1",
+			schedule: "0 9 * * MON-FRI",
+		});
+		expect(new Date(job.nextRunAt!).getHours()).toBe(9);
+		expect(job).not.toHaveProperty("cwd");
+
+		const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+		const patch = (status: string) =>
+			app(new Request(`http://mac/v1/jobs/${job.id}`, { method: "PATCH", headers, body: JSON.stringify({ status }) }));
+		expect((await app(new Request("http://mac/v1/jobs"))).status).toBe(401);
+		expect((await patch("ERROR")).status).toBe(400);
+		const paused = (await (await patch("PAUSED")).json()) as Job;
+		expect(paused.status).toBe("PAUSED");
+		expect(paused.nextRunAt).toBeUndefined();
+		expect(((await (await patch("ACTIVE")).json()) as Job).nextRunAt).toBe(job.nextRunAt);
+		const list = (await (await app(new Request("http://mac/v1/jobs", { headers }))).json()) as JobListResponse;
+		expect(list.items.map((item) => item.id)).toEqual([job.id]);
+
+		const remove = () => app(new Request(`http://mac/v1/jobs/${job.id}`, { method: "DELETE", headers }));
+		expect((await remove()).status).toBe(204);
+		expect((await remove()).status).toBe(404);
+		expect((await patch("PAUSED")).status).toBe(404);
 	});
 
 	test("reports missing APNs through structured status without duplicating it as a problem", async () => {

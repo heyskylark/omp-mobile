@@ -303,6 +303,36 @@ export interface UsageResponse {
 	accounts: UsageAccount[];
 }
 
+/** A scheduled job runs while ACTIVE or ERROR; ERROR means its last run failed, and the next good run clears it. */
+export type JobStatus = "ACTIVE" | "PAUSED" | "ERROR";
+
+/** A prompt the computer sends to an OMP session on a cron schedule. */
+export type Job = {
+	id: string;
+	/** Short label the user recognizes in the Jobs panel. */
+	name: string;
+	/** Prompt sent to the session every time the schedule fires. */
+	description: string;
+	/** Session the job prompts; replaced by a new session in the same folder when this one is deleted. */
+	sessionId: string;
+	/** Five-field cron expression (`minute hour day month weekday`) or nickname, in the computer's local time. */
+	schedule: string;
+	createdAt: ISODate;
+	lastRunAt?: ISODate;
+	/** Absent while paused. */
+	nextRunAt?: ISODate;
+} & ({ status: "ACTIVE" | "PAUSED" } | { status: "ERROR"; errorMessage: string });
+
+/** Response of `GET /v1/jobs`, newest first. */
+export interface JobListResponse {
+	items: Job[];
+}
+
+/** Body of `PATCH /v1/jobs/:id`; the response is the updated `Job`. */
+export interface UpdateJobRequest {
+	status: "ACTIVE" | "PAUSED";
+}
+
 export interface RespondRequest {
 	operationId: string;
 	response: InteractionResponse;
@@ -340,6 +370,8 @@ export type ServerMessage =
 	/** Upserts items of one agent's thread; sent only to that agent's subscribers. */
 	| { type: "agent.timeline"; sessionId: string; agentId: string; items: TimelineItem[] }
 	| { type: "sessions.changed" }
+	/** A job was created, paused, resumed, deleted, or ran; refetch `GET /v1/jobs`. */
+	| { type: "jobs.changed" }
 	| { type: "pong" }
 	| { type: "error"; error: ApiError };
 
