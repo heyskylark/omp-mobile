@@ -246,17 +246,17 @@ Without an Apple Developer Program membership, Xcode can sign the app with your 
    `OMP_PERSONAL_TEAM=1` leaves out the push entitlement that a Personal Team cannot sign.
 
 4. Connect the iPhone with a cable and trust the computer. On iOS 16 or later, turn on **Settings** > **Privacy & Security** > **Developer Mode** and restart the phone. The setting appears after the phone has been connected to Xcode once.
-5. Generate the native project and install a Release build, which embeds the JavaScript bundle so you do not need Metro.
+5. Build a Release app, which embeds the JavaScript bundle so you do not need Metro, and install it on the phone.
 
    ```sh
-   cd app
-   bunx expo prebuild -p ios --clean
-   bunx expo run:ios --device --configuration Release
+   scripts/device.sh
    ```
+
+   The script installs on the first paired iPhone, or on the one whose UDID you pass. After the first cable connection, the phone also works over Wi-Fi while it is on the same local network as the Mac. Tailscale does not carry Xcode's device connection.
 
 6. Before the first launch, open **Settings** > **General** > **VPN & Device Management** on the iPhone and trust your developer app.
 
-Run `bunx expo prebuild -p ios --clean` whenever you change these variables, because the generated `ios/` folder keeps the previous signing settings.
+The script regenerates `app/ios` when you change these variables, because the generated folder keeps the previous signing settings.
 
 ## Develop
 
@@ -267,7 +267,7 @@ Run `bunx expo prebuild -p ios --clean` whenever you change these variables, bec
 | `extension/omp-mobile.ts` | The OMP extension that reports session lifecycle, questions, and approvals to the server. |
 | `app` | The Expo app (SDK 55, Expo Router, NativeWind), the native module in `app/modules/omp-native`, and the notification service extension in `app/targets/notification-service`. |
 | `macos` | The SwiftUI menu bar app. `macos/build.sh` builds `macos/build/OMP Mobile.app`. |
-| `scripts` | Install, uninstall, TestFlight, and the end-to-end check. |
+| `scripts` | Install, uninstall, TestFlight, Simulator and iPhone builds, and the end-to-end check. |
 
 Common commands, run from the repository root:
 
@@ -288,7 +288,7 @@ xcrun simctl boot 'iPhone 17 Pro' && open -a Simulator
 scripts/simulator.sh
 ```
 
-For fast UI iteration, run `bunx expo start --dev-client` in `app/` and open a Debug build instead.
+To install on an iPhone signed by your team, see [Install with a free Apple account](#install-with-a-free-apple-account). For fast UI iteration, run `bunx expo start --dev-client` in `app/` and open a Debug build instead.
 
 The Simulator has no camera. To pair it, copy the pairing link from the menu bar and open it with `xcrun simctl openurl booted '<link>'`. `app/dev/seal-push.ts` writes a sealed sample push that you can send with `xcrun simctl push booted com.heyskylark.ompmobile app/dev/push-sample.apns`.
 
