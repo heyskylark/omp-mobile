@@ -54,6 +54,7 @@ function ready(snapshot: SessionSnapshot): SessionViewState {
 	return {
 		kind: "ready",
 		...snapshot,
+		items: upsert([], snapshot.items),
 		modelRole: snapshot.modelRole ?? null,
 		agents: snapshot.agents ?? [],
 		loadingOlder: false,
