@@ -2,6 +2,7 @@ import "../../global.css";
 import { useEffect } from "react";
 import { Stack, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { OmpNative } from "../../modules/omp-native";
 import { OverlayProvider } from "../components/overlay";
@@ -41,36 +42,42 @@ export default function RootLayout() {
 		void load();
 	}, [load]);
 	return (
-		<KeyboardProvider>
-			<ToastProvider>
-				<OverlayProvider>
-					<StatusBar style="light" />
-					<NotificationBridge />
-					<Stack
-						screenOptions={{
-							headerStyle: { backgroundColor: "#0B0B0C" },
-							headerTintColor: "#ECECEE",
-							headerShadowVisible: false,
-							contentStyle: { backgroundColor: "#0B0B0C" },
-							headerBackButtonDisplayMode: "minimal",
-						}}
-					>
-						<Stack.Screen name="index" options={{ title: "Computers" }} />
-						<Stack.Screen name="pair" options={{ title: "Add computer", presentation: "modal" }} />
-						<Stack.Screen name="machine/[machineId]/index" options={{ title: "Sessions" }} />
-						<Stack.Screen name="machine/[machineId]/new" options={{ title: "New session" }} />
-						<Stack.Screen name="machine/[machineId]/browse" options={{ title: "Choose folder" }} />
-						<Stack.Screen name="machine/[machineId]/session/[sessionId]/index" options={{ title: "Session" }} />
-						<Stack.Screen name="machine/[machineId]/session/[sessionId]/agent/[agentId]" options={{ title: "Agent" }} />
-						<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
-						<Stack.Screen name="machine/[machineId]/usage" options={{ title: "Usage", presentation: "modal" }} />
-						<Stack.Screen
-							name="machine/[machineId]/browser"
-							options={{ title: "Browser", presentation: "fullScreenModal" }}
-						/>
-					</Stack>
-				</OverlayProvider>
-			</ToastProvider>
-		</KeyboardProvider>
+		<GestureHandlerRootView style={{ flex: 1 }}>
+			<KeyboardProvider>
+				<ToastProvider>
+					<OverlayProvider>
+						<StatusBar style="light" />
+						<NotificationBridge />
+						<Stack
+							screenOptions={{
+								headerStyle: { backgroundColor: "#0B0B0C" },
+								headerTintColor: "#ECECEE",
+								headerShadowVisible: false,
+								contentStyle: { backgroundColor: "#0B0B0C" },
+								headerBackButtonDisplayMode: "minimal",
+							}}
+						>
+							<Stack.Screen name="index" options={{ title: "Computers" }} />
+							<Stack.Screen name="pair" options={{ title: "Add computer", presentation: "modal" }} />
+							<Stack.Screen name="machine/[machineId]/index" options={{ title: "Sessions" }} />
+							<Stack.Screen name="machine/[machineId]/new" options={{ title: "New session" }} />
+							<Stack.Screen name="machine/[machineId]/browse" options={{ title: "Choose folder" }} />
+							<Stack.Screen name="machine/[machineId]/session/[sessionId]/index" options={{ title: "Session" }} />
+							<Stack.Screen
+								name="machine/[machineId]/session/[sessionId]/agent/[agentId]"
+								options={{ title: "Agent" }}
+							/>
+							<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
+							<Stack.Screen name="machine/[machineId]/jobs" options={{ title: "Jobs" }} />
+							<Stack.Screen name="machine/[machineId]/usage" options={{ title: "Usage", presentation: "modal" }} />
+							<Stack.Screen
+								name="machine/[machineId]/browser"
+								options={{ title: "Browser", presentation: "fullScreenModal" }}
+							/>
+						</Stack>
+					</OverlayProvider>
+				</ToastProvider>
+			</KeyboardProvider>
+		</GestureHandlerRootView>
 	);
 }

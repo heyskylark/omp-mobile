@@ -124,6 +124,12 @@ export default function SessionsScreen() {
 			title: machine?.name ?? "Sessions",
 			headerRight: () => (
 				<View className="flex-row gap-4">
+					<Pressable
+						accessibilityLabel="Jobs"
+						onPress={() => router.push({ pathname: "/machine/[machineId]/jobs", params: { machineId } })}
+					>
+						<Icon name="clock" color="#9A9AA2" size={19} />
+					</Pressable>
 					<Pressable onPress={() => router.push({ pathname: "/machine/[machineId]/new", params: { machineId } })}>
 						<Icon name="plus" color="#8B93FF" size={19} />
 					</Pressable>

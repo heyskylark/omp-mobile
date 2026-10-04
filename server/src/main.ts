@@ -7,6 +7,7 @@ import { createBrowserService } from "./browser/index.ts";
 import { loadConfig } from "./config.ts";
 import { createHistory } from "./history/index.ts";
 import { startHttp, type HttpService } from "./http/index.ts";
+import { createJobService, createJobStore, type JobService } from "./jobs/index.ts";
 import { createLiveHub } from "./live/index.ts";
 import { createPushService, type PushService } from "./push/index.ts";
 import { createDeviceStore } from "./store/index.ts";
@@ -49,9 +50,12 @@ async function main(): Promise<void> {
 	const browser = createBrowserService({ relayUrl: config.browserRelayUrl });
 	let http: HttpService | undefined;
 	let push: PushService | undefined;
+	let jobs: JobService | undefined;
+	const jobStore = createJobStore(join(config.dataDir, "jobs.db"));
 	const serverPath = join(config.dataDir, "server.json");
 	try {
 		const version = await ompVersion(config.ompPath);
+		jobs = createJobService({ store: jobStore, hub, history });
 		http = await startHttp({
 			config,
 			machineId,
@@ -62,6 +66,7 @@ async function main(): Promise<void> {
 			browser,
 			adminToken,
 			extensionToken,
+			jobs,
 		});
 		if (config.apns) push = createPushService(config.apns, machineId, devices, hub);
 		await writePrivateJson(serverPath, {
@@ -75,6 +80,8 @@ async function main(): Promise<void> {
 		});
 		console.log(`OMP Mobile server listening at ${http.url}`);
 	} catch (error) {
+		jobs?.stop();
+		jobStore.close();
 		await hub.stop();
 		throw error;
 	}
@@ -83,10 +90,12 @@ async function main(): Promise<void> {
 	const stop = async () => {
 		if (stopping) return;
 		stopping = true;
+		jobs?.stop();
 		push?.stop();
 		await http?.stop();
 		browser.stop();
 		await hub.stop();
+		jobStore.close();
 		await rm(serverPath, { force: true });
 		process.exit(0);
 	};

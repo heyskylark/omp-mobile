@@ -32,6 +32,7 @@ The menu bar screenshots use sample data.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
 - **Your browser.** When an OMP agent uses your own Chrome through the OMP Browser Relay, tap the Safari button in the session header, or **Open browser** on a question, to watch the tab it works in. Tap **Take control** to tap, scroll, and type in the tab yourself, for example to sign in when the agent asks you to, then tap **Hand back**. See [Let agents use your Chrome](#let-agents-use-your-chrome).
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
+- **Scheduled jobs.** Ask OMP in any session to do something on a schedule, such as "every weekday at 9, summarize yesterday's commits". The agent calls the extension's `schedule_job` tool with a name, the prompt to send, and a cron schedule in the computer's time zone. Each time the schedule fires, the computer sends that prompt to the session as if you had typed it. If the session was deleted, the computer starts a new session in the same folder and later runs go there. Tap the clock button on a computer's session list to open **Jobs**. A green dot marks an active job. A red dot marks a paused job, or a job whose last run failed, with the reason underneath. A failed job keeps its schedule, and its next successful run clears the error. Swipe a job left to **Pause**, **Resume**, or **Delete** it, and tap it to open its session. Jobs run only while the server runs. Runs missed while the server was stopped are skipped.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.
 - **A menu bar icon** on the Mac that shows the server's status and opens a QR code to pair a phone.
 
@@ -264,7 +265,7 @@ The script regenerates `app/ios` when you change these variables, because the ge
 |---|---|
 | `packages/protocol` | The app and server contract: HTTP bodies, WebSocket messages, timeline items, push payloads. |
 | `server` | The Bun server: session history and paging (`src/history`), live sessions over RPC and Collab (`src/live`), HTTP, pairing, and push. |
-| `extension/omp-mobile.ts` | The OMP extension that reports session lifecycle, questions, and approvals to the server. |
+| `extension/omp-mobile.ts` | The OMP extension that reports session lifecycle, questions, and approvals to the server, and gives the agent the `schedule_job` tool. |
 | `app` | The Expo app (SDK 55, Expo Router, NativeWind), the native module in `app/modules/omp-native`, and the notification service extension in `app/targets/notification-service`. |
 | `macos` | The SwiftUI menu bar app. `macos/build.sh` builds `macos/build/OMP Mobile.app`. |
 | `scripts` | Install, uninstall, TestFlight, Simulator and iPhone builds, and the end-to-end check. |
@@ -297,6 +298,7 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - The app API binds only to the computer's Tailscale address and to `127.0.0.1`. Tailscale encrypts the traffic, so the app uses plain HTTP and WebSocket to `*.ts.net` names.
 - Pairing codes are single-use and expire after 10 minutes. Device tokens are stored as SHA-256 hashes in `~/.omp-mobile/devices.json` with mode 0600.
 - Admin routes (used by the menu bar) and the extension endpoint exist only on the loopback listener and need tokens from `~/.omp-mobile/server.json`, which is also mode 0600.
+- Scheduled jobs live in `~/.omp-mobile/jobs.db`, a SQLite database with mode 0600. Only the extension endpoint creates jobs. Paired phones can list, pause, resume, and delete them.
 - Folder browsing and new sessions are limited to the configured `roots`, checked after resolving symbolic links.
 
 ## Known limitations

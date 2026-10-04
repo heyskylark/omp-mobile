@@ -21,7 +21,23 @@ type ExtensionContext = {
 	setTimeout(callback: () => unknown, ms: number): unknown;
 };
 type Event = Record<string, unknown> & { type: string };
+type Described = { describe(text: string): unknown };
+type ToolResult = { content: { type: "text"; text: string }[]; details?: unknown };
 type ExtensionApi = {
+	registerTool(tool: {
+		name: string;
+		label: string;
+		description: string;
+		parameters: unknown;
+		execute(
+			toolCallId: string,
+			params: Record<string, string>,
+			signal: AbortSignal | undefined,
+			onUpdate: unknown,
+			context: ExtensionContext,
+		): Promise<ToolResult>;
+	}): void;
+	zod: { object(shape: Record<string, unknown>): unknown; string(): Described };
 	on(name: string, handler: (event: Event, context: ExtensionContext) => unknown): void;
 	registerCommand(
 		name: string,
@@ -217,6 +233,37 @@ function post(event: Event, context: ExtensionContext): Promise<void> {
 	});
 }
 
+const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+async function scheduleJob(params: Record<string, string>, context: ExtensionContext): Promise<ToolResult> {
+	const server = await readServer();
+	if (!server) throw new Error("The OMP Mobile server is not running on this computer, so jobs cannot be scheduled.");
+	const response = await fetch(`http://127.0.0.1:${server.port}/internal/jobs`, {
+		method: "POST",
+		headers: { "content-type": "application/json", "x-omp-mobile-token": server.extensionToken },
+		body: JSON.stringify({
+			name: params.name,
+			description: params.description,
+			schedule: params.schedule,
+			sessionId: context.sessionManager.getSessionId(),
+			cwd: context.cwd,
+		}),
+		signal: AbortSignal.timeout(10_000),
+	});
+	const body = (await response.json().catch(() => ({}))) as { message?: string; nextRunAt?: string };
+	if (!response.ok) throw new Error(`Could not schedule the job: ${body.message ?? `HTTP ${response.status}`}`);
+	const next = body.nextRunAt ? new Date(body.nextRunAt).toLocaleString("en-US", { timeZone: TIME_ZONE }) : "unknown";
+	return {
+		content: [
+			{
+				type: "text",
+				text: `Scheduled "${params.name}" (${params.schedule}). Next run: ${next} (${TIME_ZONE}). The user can pause, resume, or delete it in the OMP app's Jobs panel.`,
+			},
+		],
+		details: body,
+	};
+}
+
 type AgentSignal = {
 	id: string;
 	sessionFile: string;
@@ -301,6 +348,26 @@ export default function ompMobileExtension(api: ExtensionApi): void {
 	api.registerCommand(MODEL_ROLE_COMMAND, {
 		description: "Switch to the smol, default, or slow model role (used by OMP Mobile)",
 		handler: (args, context) => switchModelRole(api, args, context),
+	});
+	const z = api.zod;
+	api.registerTool({
+		name: "schedule_job",
+		label: "Schedule job",
+		description: [
+			"Schedule a recurring job through OMP Mobile. Each time the schedule fires, the computer sends `description` to this session as a new user message (or to a new session in this folder if this one was deleted).",
+			"Use it only when the user asks for something to run on a schedule or repeatedly.",
+			`\`schedule\` is a 5-field cron expression (minute hour day-of-month month day-of-week) in this computer's time zone, ${TIME_ZONE}; nicknames such as @hourly and @daily also work. Example: "0 9 * * MON-FRI" is 9:00 every weekday.`,
+		].join(" "),
+		parameters: z.object({
+			name: z.string().describe("Short label, at most 80 characters, that the user sees in the Jobs panel"),
+			description: z
+				.string()
+				.describe(
+					"Self-contained instruction you will receive on every run, written so it makes sense without this conversation",
+				),
+			schedule: z.string().describe("5-field cron expression or nickname, in the computer's local time"),
+		}),
+		execute: (_toolCallId, params, _signal, _onUpdate, context) => scheduleJob(params, context),
 	});
 	// rpc modes always set PI_NO_TITLE, so only an explicit `--no-title` (e.g. in the server's rpcArgs) opts out here.
 	if (process.argv.includes("--no-title")) return;
