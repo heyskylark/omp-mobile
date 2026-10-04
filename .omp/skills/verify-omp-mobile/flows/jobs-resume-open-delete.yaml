@@ -1,0 +1,50 @@
+# Starts on a paused job (run jobs-pause first): resumes it by swipe, taps the row to open its session thread, goes
+# back, and deletes the job by swipe.
+# env: MACHINE_NAME, JOB_NAME
+appId: com.heyskylark.ompmobile
+name: jobs-resume-open-delete
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "Jobs"
+- extendedWaitUntil:
+    visible: "${JOB_NAME}, Paused"
+    timeout: 15000
+- swipe:
+    from: "${JOB_NAME}, Paused"
+    direction: LEFT
+- tapOn: "Resume"
+- extendedWaitUntil:
+    visible: "${JOB_NAME}, Active"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: jobs-04-resumed
+- tapOn: "${JOB_NAME}, Active"
+- extendedWaitUntil:
+    visible: "Message OMP"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: jobs-05-thread
+# The Jobs screen stays in the hierarchy under the thread with its own BackButton, so tap the visible one by position.
+- tapOn:
+    point: "9%,10%"
+- extendedWaitUntil:
+    notVisible: "Message OMP"
+    timeout: 10000
+- assertVisible: "${JOB_NAME}, Active"
+- waitForAnimationToEnd
+- swipe:
+    from: "${JOB_NAME}, Active"
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "Delete"
+    timeout: 5000
+- tapOn: "Delete"
+- extendedWaitUntil:
+    notVisible: "${JOB_NAME}, .*"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: jobs-06-deleted
