@@ -4,6 +4,8 @@ import type {
 	BrowserStatusResponse,
 	CreateSessionRequest,
 	DirectoryListing,
+	Job,
+	JobListResponse,
 	MachineNameRequest,
 	ModelRole,
 	ModelRoleRequest,
@@ -20,6 +22,7 @@ import type {
 	SkillCommand,
 	SkillListResponse,
 	TimelinePage,
+	UpdateJobRequest,
 	UsageResponse,
 } from "@omp-mobile/protocol";
 import type { PairedMachine } from "../native/types";
@@ -238,6 +241,23 @@ export class OmpApi {
 			{ method: "GET" },
 			typed<BrowserStatusResponse>("browser status", ["availability"]),
 		);
+	}
+
+	jobs() {
+		return this.request("/v1/jobs", { method: "GET" }, typed<JobListResponse>("jobs", ["items"]));
+	}
+
+	setJobStatus(id: string, status: UpdateJobRequest["status"]): Promise<Job> {
+		const body: UpdateJobRequest = { status };
+		return this.request(
+			`/v1/jobs/${encodeURIComponent(id)}`,
+			{ method: "PATCH", body: JSON.stringify(body) },
+			typed<Job>("job", ["id", "status", "schedule"]),
+		);
+	}
+
+	deleteJob(id: string): Promise<void> {
+		return this.request(`/v1/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }, () => undefined);
 	}
 
 	registerPush(token: string, environment: "sandbox" | "production") {

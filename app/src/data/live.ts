@@ -36,6 +36,7 @@ function parseMessage(raw: unknown): ServerMessage | null {
 				"session.update",
 				"session.modelRole",
 				"sessions.changed",
+				"jobs.changed",
 				"session.agents",
 				"agent.timeline",
 				"pong",
