@@ -46,6 +46,8 @@ function cursorPart(value: string | Buffer) {
 
 /** Custom entry the OMP Mobile extension appends after switching roles; keep in sync with `extension/omp-mobile.ts`. */
 const MODEL_ROLE_ENTRY = "omp-mobile-model-role";
+/** Custom entry the OMP Mobile extension appends after the advisor is turned on or off; keep in sync with the extension. */
+const ADVISOR_ENTRY = "omp-mobile-advisor";
 /** OMP records transient retry-fallback models (and the switch back) under this role; they never change the role. */
 const FALLBACK_ROLE = "fallback";
 
@@ -316,5 +318,19 @@ export class SessionPager {
 			return MODEL_ROLES.find((candidate) => candidate === role) ?? null;
 		}
 		return "default";
+	}
+
+	/** OMP keeps the advisor switch in memory only, so the newest phone toggle on the active chain decides; none means off. */
+	async advisor(file: string): Promise<boolean> {
+		const index = await this.#index(file);
+		const active = this.#active(index);
+		for (let activeOrdinal = active.length - 1; activeOrdinal >= 0; activeOrdinal--) {
+			const descriptor = index.entries[active[activeOrdinal]!];
+			if (descriptor?.type !== "custom") continue;
+			const entry = await this.#readEntry(file, descriptor);
+			if (entry?.type === "custom" && entry.customType === ADVISOR_ENTRY)
+				return (entry.data as Record<string, unknown> | undefined)?.enabled === true;
+		}
+		return false;
 	}
 }

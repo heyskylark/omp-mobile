@@ -50,6 +50,8 @@ export interface History {
 	readTail(id: string, opts: { afterEntryId?: string; limit: number }): Promise<DurableTail>;
 	/** Active model role on the session's current branch; null when it runs a model picked outside those roles. */
 	readModelRole(id: string): Promise<ModelRole | null>;
+	/** Whether the phone last left OMP's advisor on for the session's current branch. */
+	readAdvisor(id: string): Promise<boolean>;
 	/** Null unless `file` is a task agent's transcript, per OMP's layout. */
 	locateAgent(file: string): Promise<AgentLocation | null>;
 	getSessionByFile(file: string): Promise<SessionMeta | null>;

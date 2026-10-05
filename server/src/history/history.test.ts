@@ -228,6 +228,31 @@ describe("OMP JSONL history", () => {
 		expect(await history.readModelRole("session-1")).toBe("smol");
 	});
 
+	test("reads the advisor from the newest phone toggle on the active branch", async () => {
+		const { history, file } = await fixture();
+		expect(await history.readAdvisor("session-1")).toBe(false);
+		let parentId = "c1";
+		const append = async (id: string, entry: Record<string, unknown>, parent = parentId) => {
+			await appendFile(
+				file,
+				`${JSON.stringify({ id, parentId: parent, timestamp: "2026-01-01T00:00:07.000Z", ...entry })}\n`,
+			);
+			parentId = id;
+		};
+		await appendFile(file, "}\n");
+		await append("a1", { type: "custom", customType: "omp-mobile-advisor", data: { enabled: true } });
+		await append("k1", { type: "custom", customType: "omp-mobile-model-role", data: { role: "smol" } });
+		expect(await history.readAdvisor("session-1")).toBe(true);
+		await append("a2", { type: "custom", customType: "omp-mobile-advisor", data: { enabled: false } });
+		expect(await history.readAdvisor("session-1")).toBe(false);
+		await append(
+			"u3",
+			{ type: "message", message: { role: "user", timestamp: 1767225608000, content: "Branch" } },
+			"k1",
+		);
+		expect(await history.readAdvisor("session-1")).toBe(true);
+	});
+
 	test("model change events carry the reasoning level OMP recorded with the switch", async () => {
 		const { history, file } = await fixture();
 		let parentId = "c1";

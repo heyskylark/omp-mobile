@@ -120,6 +120,9 @@ const history: History = {
 	async readModelRole() {
 		return "default" as const;
 	},
+	async readAdvisor() {
+		return false;
+	},
 	async locateAgent() {
 		return null;
 	},

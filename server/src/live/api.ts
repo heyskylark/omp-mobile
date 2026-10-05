@@ -89,6 +89,8 @@ export interface LiveHub {
 	abort(sessionId: string): Promise<void>;
 	/** Switches the session's OMP model role, starting a server-owned rpc child when it is idle. */
 	setModelRole(sessionId: string, role: ModelRole): Promise<void>;
+	/** Turns OMP's advisor on or off for the session, starting a server-owned rpc child when it is idle. */
+	setAdvisor(sessionId: string, enabled: boolean): Promise<void>;
 	/** Stops the server-owned rpc child (abort if working, wait settled, close stdin) so the terminal can resume. */
 	handoff(sessionId: string): Promise<void>;
 	respond(sessionId: string, interactionId: string, req: RespondRequest): Promise<ResponseReceipt>;
