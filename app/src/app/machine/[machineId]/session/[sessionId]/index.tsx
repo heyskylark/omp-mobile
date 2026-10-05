@@ -25,7 +25,13 @@ import { runningCount } from "../../../../../data/agents";
 import { OmpApi, operationId } from "../../../../../data/api";
 import { acquireMachineSocket } from "../../../../../data/live";
 import { useMachine } from "../../../../../data/machines";
-import { type OutgoingMessage, sessionOutbox, UNDELIVERED_AFTER_MS, useOutgoing } from "../../../../../data/outbox";
+import {
+	chatRows,
+	type OutgoingMessage,
+	sessionOutbox,
+	UNDELIVERED_AFTER_MS,
+	useOutgoing,
+} from "../../../../../data/outbox";
 import { sessionViewReducer, type SessionViewState } from "../../../../../data/session-reducer";
 import { useSkills } from "../../../../../data/skills";
 
@@ -265,7 +271,10 @@ export default function SessionScreen() {
 	// While a turn runs, its unfinished tool calls stay at the bottom in start order; tools that finish later
 	// (and their results) are timestamped after them and would otherwise push them up the transcript.
 	const running = working ? view.items.filter((item) => item.kind === "tool" && item.state === "running") : [];
-	const newestFirst = [...view.items.filter((item) => !running.includes(item)), ...running].reverse();
+	const newestFirst = chatRows(
+		[...view.items.filter((item) => !running.includes(item)), ...running],
+		outgoing,
+	).reverse();
 	return (
 		<ChatImageProvider machine={machine}>
 			<View className="flex-1 bg-ink">
@@ -279,30 +288,24 @@ export default function SessionScreen() {
 					<ChatList
 						data={newestFirst}
 						extraData={[skillNames, agentsById]}
-						keyExtractor={(item) => item.id}
-						renderItem={({ item }) => (
-							<TimelineRow item={item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
-						)}
+						keyExtractor={(row) => (row.kind === "item" ? row.item.id : row.message.operationId)}
+						renderItem={({ item: row }) =>
+							row.kind === "item" ? (
+								<TimelineRow item={row.item} skills={skillNames} agents={agentsById} onOpenAgent={openAgent} />
+							) : (
+								<OutgoingRow
+									message={row.message}
+									skills={skillNames}
+									onPressFailed={() => resolveFailed(row.message)}
+								/>
+							)
+						}
 						contentContainerClassName="px-4 pb-3 pt-3"
 						keyboardShouldPersistTaps="always"
 						keyboardDismissMode="interactive"
 						composer={{ height: composerHeight, keyboardOffset }}
 						onEndReached={() => void loadOlder()}
 						onEndReachedThreshold={0.5}
-						ListHeaderComponent={
-							outgoing.length ? (
-								<View>
-									{outgoing.map((message) => (
-										<OutgoingRow
-											key={message.operationId}
-											message={message}
-											skills={skillNames}
-											onPressFailed={() => resolveFailed(message)}
-										/>
-									))}
-								</View>
-							) : null
-						}
 						ListFooterComponent={
 							view.loadingOlder ? (
 								<Text className="pb-3 text-center text-caption text-secondary">Loading earlier messages…</Text>

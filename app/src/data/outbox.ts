@@ -28,6 +28,8 @@ export interface OutgoingMessage {
 	status: OutgoingStatus;
 	/** Time of the newest transcript item when it was sent. Only a user message recorded later can be this one. */
 	sentAfter: string;
+	/** Time of the newest transcript item when it was last sent or retried; the bubble shows after those items. */
+	shownAfter: string;
 }
 
 /**
@@ -65,17 +67,19 @@ export class SessionOutbox {
 		const failed = this.messages.find((message) => message.operationId === operationId);
 		if (failed?.status.kind !== "failed") return;
 		// The server remembers an operation it took, so an undelivered message goes out as a new one. An unsent one
-		// keeps its operation and baseline: its first request may have landed after all.
+		// keeps its operation and baseline: its first request may have landed after all. Either moves to the bottom.
+		const shownAfter = newestAt(transcript);
 		const message: OutgoingMessage =
 			failed.status.reason === "undelivered"
 				? {
 						...failed,
 						operationId: newOperationId(),
 						status: { kind: "sending" },
-						sentAfter: transcript.reduce((newest, item) => (item.at > newest ? item.at : newest), ""),
+						sentAfter: shownAfter,
+						shownAfter,
 					}
-				: { ...failed, status: { kind: "sending" } };
-		this.#replace(operationId, message);
+				: { ...failed, status: { kind: "sending" }, shownAfter };
+		this.#update([...this.messages.filter((pending) => pending.operationId !== operationId), message]);
 		void this.#post(api, message);
 	}
 
@@ -142,12 +146,10 @@ export class SessionOutbox {
 		);
 	}
 
-	#add(message: Omit<OutgoingMessage, "sentAfter">, transcript: TimelineItem[]): OutgoingMessage {
+	#add(message: Omit<OutgoingMessage, "sentAfter" | "shownAfter">, transcript: TimelineItem[]): OutgoingMessage {
 		if (!this.messages.length) this.#matched.clear();
-		const added = {
-			...message,
-			sentAfter: transcript.reduce((newest, item) => (item.at > newest ? item.at : newest), ""),
-		};
+		const sentAfter = newestAt(transcript);
+		const added = { ...message, sentAfter, shownAfter: sentAfter };
 		this.#update([...this.messages, added]);
 		return added;
 	}
@@ -199,6 +201,38 @@ export function sessionOutbox(machineId: string, sessionId: string): SessionOutb
 		outboxes.set(key, outbox);
 	}
 	return outbox;
+}
+
+export type ChatRow = { kind: "item"; item: TimelineItem } | { kind: "outgoing"; message: OutgoingMessage };
+
+/**
+ * The transcript (oldest first) with each outgoing message after the items it was sent after, so a reply that
+ * reaches the transcript before its prompt (a new session's first turn) still shows below that prompt. OMP records
+ * user messages in the order it takes them, so a message it may still record also follows every recorded one.
+ */
+export function chatRows(items: TimelineItem[], outgoing: OutgoingMessage[]): ChatRow[] {
+	const lastUser = items.findLastIndex((item) => item.kind === "user");
+	// Index of the item each message follows; -1 puts it before the whole transcript.
+	const follows = outgoing.map((message) =>
+		Math.max(
+			message.status.kind === "failed" ? -1 : lastUser,
+			items.findLastIndex((item) => item.at <= message.shownAfter),
+		),
+	);
+	const rows: ChatRow[] = [];
+	const pushOutgoing = (index: number) => {
+		for (const [i, message] of outgoing.entries()) if (follows[i] === index) rows.push({ kind: "outgoing", message });
+	};
+	pushOutgoing(-1);
+	items.forEach((item, index) => {
+		rows.push({ kind: "item", item });
+		pushOutgoing(index);
+	});
+	return rows;
+}
+
+function newestAt(items: TimelineItem[]): string {
+	return items.reduce((newest, item) => (item.at > newest ? item.at : newest), "");
 }
 
 export function useOutgoing(outbox: SessionOutbox): OutgoingMessage[] {
