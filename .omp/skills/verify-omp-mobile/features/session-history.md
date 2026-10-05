@@ -12,6 +12,7 @@ The user browses every OMP session on a paired computer, newest first, and opens
 - `history-expand-tool`: tapping a tool card shows `INPUT` / `OUTPUT` (source `Input` / `Output` / `Output · truncated`, styled uppercase). **Exercised** (`new-session-approve.yaml`).
 - `history-expand-anchor`: expanding a thought or tool card keeps its header at the same height on screen and opens the content below it; collapsing keeps the header still, or, when the header has scrolled off the top, brings the collapsed card back to the top of the screen. Agent threads use the same list. **Exercised** in the session transcript (`transcript-anchor.yaml`); agent threads recipe-only.
 - `history-jump-bottom`: once the transcript is scrolled more than 160 pt away from the newest message, a round `Scroll to bottom` button (down arrow) floats above the composer; tapping it scrolls to the newest message and the button disappears. **Exercised** (`transcript-anchor.yaml`).
+- `history-follow-send`: sending a prompt or steering a running turn while scrolled away from the newest message animates the transcript back to it, the same scroll the `Scroll to bottom` button runs. **Exercised** (`transcript-follow-send.yaml`).
 - `history-empty`: a computer whose history is empty shows `No sessions yet`. **Exercised** (second run's server with `HOME=<SCRATCH>`).
 
 ## How to get to it (user POV)
@@ -49,6 +50,13 @@ Preconditions: app paired to this run's server.
   ```
 
   Pass: the card header sits at the same height in `anchor-01-collapsed` and `anchor-02-expanded`, with `INPUT`/`OUTPUT` below it; `anchor-03-header-off-screen` shows only output; `anchor-04-collapsed-in-view` shows the collapsed card at the top of the transcript; `anchor-01` through `anchor-04` show the `Scroll to bottom` button above the composer, and `anchor-05-newest` shows the newest message without it.
+- **Back to the newest message on send:** browses to the scratch `project` and runs real model turns in a new session there (`<TOKEN>` is a fresh word):
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/follow -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<TOKEN> .omp/skills/verify-omp-mobile/flows/transcript-follow-send.yaml
+  ```
+
+  Pass: `follow-01-scrolled-away`, `follow-02-prompt-typed`, `follow-04-working-scrolled-away`, and `follow-05-steer-typed` show older numbers with the `Scroll to bottom` button; `follow-03-after-send` shows the sent prompt as the newest message and `follow-06-after-steer` the steer marked `Sent`, both without the button.
 - **Search and project filter:** project chips come from `GET /v1/projects/recent`, which only lists projects inside the server's `roots`; `prepare-run.sh` confines roots to the run's `WORK`, so for real history set the run's `config.json` `roots` to `["$HOME"]` and restart the server before this recipe (only read-only GETs follow). Pick values from the server's view and save it:
 
   ```sh

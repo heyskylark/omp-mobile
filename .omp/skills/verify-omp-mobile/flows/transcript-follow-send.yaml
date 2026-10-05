@@ -1,0 +1,81 @@
+# Starts a session with a reply taller than the screen, scrolls away from the newest message, and sends a prompt:
+# the transcript animates back to the newest message. Then, with the next turn waiting for approval, scrolls away
+# again and steers: the transcript returns to the newest message the same way.
+# Leaves the turn waiting for approval with the steer queued.
+# env: MACHINE_NAME, TOKEN (unique word per run)
+appId: com.heyskylark.ompmobile
+name: transcript-follow-send
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Message OMP"
+- inputText: "Reply with the integers from 1 to 120, one per line, and nothing else."
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Stop"
+    timeout: 30000
+    optional: true
+- extendedWaitUntil:
+    notVisible: "Stop"
+    timeout: 180000
+- hideKeyboard
+- swipe:
+    start: 50%, 30%
+    end: 50%, 75%
+    duration: 400
+- swipe:
+    start: 50%, 30%
+    end: 50%, 75%
+    duration: 400
+- waitForAnimationToEnd
+- assertVisible: "Scroll to bottom"
+- takeScreenshot: follow-01-scrolled-away
+- tapOn: "Message OMP"
+- inputText: "Run bash: echo ${TOKEN}. Then reply with the single word finished."
+- waitForAnimationToEnd
+- assertVisible: "Scroll to bottom"
+- takeScreenshot: follow-02-prompt-typed
+- tapOn: "Send"
+- waitForAnimationToEnd
+- assertNotVisible: "Scroll to bottom"
+- takeScreenshot: follow-03-after-send
+- extendedWaitUntil:
+    visible: "Allow tool: .*"
+    timeout: 120000
+- hideKeyboard
+- swipe:
+    start: 50%, 25%
+    end: 50%, 55%
+    duration: 400
+- swipe:
+    start: 50%, 25%
+    end: 50%, 55%
+    duration: 400
+- waitForAnimationToEnd
+- assertVisible: "Scroll to bottom"
+- takeScreenshot: follow-04-working-scrolled-away
+- tapOn: "Message OMP"
+- inputText: "Also say the word pelican."
+- waitForAnimationToEnd
+- assertVisible: "Scroll to bottom"
+- takeScreenshot: follow-05-steer-typed
+- tapOn: "Steer"
+- waitForAnimationToEnd
+- assertNotVisible: "Scroll to bottom"
+- takeScreenshot: follow-06-after-steer

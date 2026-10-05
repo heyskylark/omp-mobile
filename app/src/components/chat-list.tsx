@@ -1,5 +1,14 @@
 import { BlurView } from "expo-blur";
-import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	createContext,
+	type Ref,
+	useContext,
+	useImperativeHandle,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { FlatList, Pressable, StyleSheet, View, type FlatListProps } from "react-native";
 import { KeyboardChatScrollView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
 import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, type SharedValue } from "react-native-reanimated";
@@ -36,6 +45,11 @@ export type FloatingComposer = {
 	keyboardOffset: number;
 };
 
+export type ChatListHandle = {
+	/** Animates to the newest message, the same way the jump-to-bottom button does. */
+	scrollToNewest(): void;
+};
+
 /**
  * An inverted chat transcript. Rows that expand in place through `useAnchoredToggle` keep their top edge
  * still, and a button returns to the newest message once the reader has scrolled away from it.
@@ -43,9 +57,11 @@ export type FloatingComposer = {
  * dragging the keyboard closed moves the transcript only with the finger, never twice as fast.
  */
 export function ChatList<T>({
+	ref,
 	composer,
 	...props
 }: Omit<FlatListProps<T>, "inverted" | "onScroll" | "onContentSizeChange" | "renderScrollComponent"> & {
+	ref?: Ref<ChatListHandle>;
 	composer?: FloatingComposer;
 }) {
 	const list = useRef<FlatList<T>>(null);
@@ -92,6 +108,8 @@ export function ChatList<T>({
 		}),
 		[],
 	);
+	const scrollToNewest = () => list.current?.scrollToOffset({ offset: newestOffset.current, animated: true });
+	useImperativeHandle(ref, () => ({ scrollToNewest }), []);
 	return (
 		<AnchoringContext value={anchoring}>
 			<View ref={viewport} style={styles.viewport}>
@@ -132,7 +150,7 @@ export function ChatList<T>({
 						<Pressable
 							accessibilityRole="button"
 							accessibilityLabel="Scroll to bottom"
-							onPress={() => list.current?.scrollToOffset({ offset: newestOffset.current, animated: true })}
+							onPress={scrollToNewest}
 							style={styles.jump}
 							className="active:opacity-80"
 						>
