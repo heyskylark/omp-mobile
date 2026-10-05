@@ -88,6 +88,10 @@ export function createHistory(options: HistoryOptions): History {
 			const session = await catalog.find(id);
 			return session ? pager.modelRole(session.file) : "default";
 		},
+		async readAdvisor(id) {
+			const session = await catalog.find(id);
+			return session ? pager.advisor(session.file) : false;
+		},
 		locateAgent,
 		async getSessionByFile(file) {
 			return (await catalog.all()).find((meta) => meta.file === file) ?? null;

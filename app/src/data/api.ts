@@ -1,4 +1,6 @@
 import type {
+	AdvisorRequest,
+	AdvisorResponse,
 	AgentThreadSnapshot,
 	ApiError,
 	BrowserStatusResponse,
@@ -186,6 +188,15 @@ export class OmpApi {
 			`/v1/sessions/${encodeURIComponent(sessionId)}/model-role`,
 			{ method: "POST", body: JSON.stringify(body) },
 			typed<ModelRoleResponse>("model role", ["modelRole"]),
+		);
+	}
+
+	setAdvisor(sessionId: string, enabled: boolean): Promise<AdvisorResponse> {
+		const body: AdvisorRequest = { enabled };
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/advisor`,
+			{ method: "POST", body: JSON.stringify(body) },
+			typed<AdvisorResponse>("advisor", ["advisor"]),
 		);
 	}
 

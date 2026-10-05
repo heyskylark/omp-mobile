@@ -43,6 +43,7 @@ const snapshot: SessionSnapshot = {
 	items: [],
 	pending: [],
 	modelRole: "default",
+	advisor: false,
 	agents: [],
 };
 
@@ -79,6 +80,7 @@ class FakeHub implements LiveHub {
 	}
 	async abort() {}
 	async setModelRole() {}
+	async setAdvisor() {}
 	async handoff() {}
 	async respond(_sessionId: string, _interactionId: string, req: { operationId: string }) {
 		return { operationId: req.operationId, state: "applied" as const };
@@ -124,6 +126,9 @@ const history: History = {
 	},
 	async readModelRole() {
 		return "default" as const;
+	},
+	async readAdvisor() {
+		return false;
 	},
 	async locateAgent() {
 		return null;

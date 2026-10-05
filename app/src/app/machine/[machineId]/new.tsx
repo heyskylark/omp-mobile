@@ -18,6 +18,7 @@ export default function NewSessionScreen() {
 	const [projects, setProjects] = useState<RecentProject[]>([]);
 	const [selected, setSelected] = useState(cwd ?? "");
 	const [modelRole, setModelRole] = useState<ModelRole>("default");
+	const [advisor, setAdvisor] = useState(false);
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
 	const draft = useComposerDraft(`${machineId}/new`);
@@ -53,6 +54,7 @@ export default function NewSessionScreen() {
 				prompt: prompt.trim(),
 				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
 				...(modelRole === "default" ? {} : { modelRole }),
+				...(advisor ? { advisor: true } : {}),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 			sessionOutbox(machineId, created.sessionId).created(prompt.trim(), images);
@@ -134,6 +136,8 @@ export default function NewSessionScreen() {
 					onRemoveImage={draft.remove}
 					modelRole={modelRole}
 					onModelRoleChange={setModelRole}
+					advisor={advisor}
+					onAdvisorChange={setAdvisor}
 					skills={skills}
 				/>
 			</View>

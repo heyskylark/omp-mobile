@@ -56,6 +56,13 @@ const MODEL_ROLE_COMMAND = "omp-mobile-model";
 /** Session entry recording the role picked from the phone; keep in sync with `server/src/history/pager.ts`. */
 const MODEL_ROLE_ENTRY = "omp-mobile-model-role";
 const MODEL_ROLES: Record<string, true> = { smol: true, default: true, slow: true };
+/** The server sends `/omp-mobile-advisor on|off` after OMP's own `/advisor`; keep in sync with `server/src/live/actor.ts`. */
+const ADVISOR_COMMAND = "omp-mobile-advisor";
+/**
+ * Session entry recording the advisor switch, which OMP keeps only in memory, so the server can restore it when it
+ * resumes the session; keep in sync with `server/src/history/pager.ts`.
+ */
+const ADVISOR_ENTRY = "omp-mobile-advisor";
 const THINKING_LEVELS: Record<string, true> = {
 	off: true,
 	minimal: true,
@@ -91,6 +98,12 @@ async function switchModelRole(api: ExtensionApi, args: string, context: Extensi
 	const level = roleThinkingLevel(api, context, role, model);
 	if (level) api.setThinkingLevel(level);
 	api.appendEntry(MODEL_ROLE_ENTRY, { role });
+}
+
+async function recordAdvisor(api: ExtensionApi, args: string): Promise<void> {
+	const state = args.trim();
+	if (state !== "on" && state !== "off") throw new Error(`Expected on or off, got "${state}"`);
+	api.appendEntry(ADVISOR_ENTRY, { enabled: state === "on" });
 }
 
 type TitleInternals = {
@@ -348,6 +361,10 @@ export default function ompMobileExtension(api: ExtensionApi): void {
 	api.registerCommand(MODEL_ROLE_COMMAND, {
 		description: "Switch to the smol, default, or slow model role (used by OMP Mobile)",
 		handler: (args, context) => switchModelRole(api, args, context),
+	});
+	api.registerCommand(ADVISOR_COMMAND, {
+		description: "Record that OMP Mobile turned the advisor on or off (used by OMP Mobile)",
+		handler: (args) => recordAdvisor(api, args),
 	});
 	const z = api.zod;
 	api.registerTool({

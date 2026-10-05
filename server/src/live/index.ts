@@ -58,7 +58,14 @@ class Hub implements LiveHub {
 		const actor = await this.#actor(sessionId);
 		if (actor) {
 			if (this.#provisional.has(sessionId))
-				return { session: actor.summary(), items: [], pending: actor.pending, modelRole: "default", agents: [] };
+				return {
+					session: actor.summary(),
+					items: [],
+					pending: actor.pending,
+					modelRole: "default",
+					advisor: false,
+					agents: [],
+				};
 			return actor.snapshot(limit);
 		}
 		const meta = await this.#opts.history.getSession(sessionId);
@@ -70,6 +77,7 @@ class Hub implements LiveHub {
 			olderCursor: page.olderCursor,
 			pending: [],
 			modelRole: await this.#opts.history.readModelRole(sessionId),
+			advisor: await this.#opts.history.readAdvisor(sessionId),
 			agents: [],
 		};
 	}
@@ -111,7 +119,10 @@ class Hub implements LiveHub {
 			this.#opts,
 			this.#hooks(),
 		);
-		await actor.createNew(req.prompt, req.operationId, req.images ?? [], req.modelRole);
+		await actor.createNew(req.prompt, req.operationId, req.images ?? [], {
+			modelRole: req.modelRole,
+			advisor: req.advisor,
+		});
 		this.#actors.set(actor.sessionId, actor);
 		this.#broadcast();
 		return { sessionId: actor.sessionId };
@@ -125,6 +136,9 @@ class Hub implements LiveHub {
 	}
 	async setModelRole(sessionId: string, role: ModelRole): Promise<void> {
 		await (await this.#required(sessionId)).setModelRole(role);
+	}
+	async setAdvisor(sessionId: string, enabled: boolean): Promise<void> {
+		await (await this.#required(sessionId)).setAdvisor(enabled);
 	}
 	async handoff(sessionId: string): Promise<void> {
 		await (await this.#required(sessionId)).handoff();

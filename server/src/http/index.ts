@@ -7,6 +7,7 @@ import {
 	MAX_PROMPT_IMAGES,
 	MODEL_ROLES,
 	PROTOCOL_VERSION,
+	type AdvisorResponse,
 	type ModelRoleResponse,
 	encodePairingUrl,
 	type ApiError,
@@ -55,9 +56,11 @@ const CreateSessionSchema = z.object({
 	prompt: z.string(),
 	images: ImagesSchema,
 	modelRole: z.enum(MODEL_ROLES).optional(),
+	advisor: z.boolean().optional(),
 });
 const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
 const ModelRoleSchema = z.object({ role: z.enum(MODEL_ROLES) });
+const AdvisorSchema = z.object({ enabled: z.boolean() });
 const MachineNameSchema = z.object({ machineName: z.string().trim().min(1).max(MAX_MACHINE_NAME_LENGTH) });
 const ResponseSchema = z.object({
 	operationId: z.string().min(1),
@@ -474,6 +477,12 @@ export function createHttpHandler(
 				const { role } = ModelRoleSchema.parse(await body(req));
 				await options.hub.setModelRole(parsePathParam(modelRoleMatch[1]!), role);
 				return json({ modelRole: role } satisfies ModelRoleResponse);
+			}
+			const advisorMatch = path.match(/^\/v1\/sessions\/([^/]+)\/advisor$/);
+			if (advisorMatch && req.method === "POST") {
+				const { enabled } = AdvisorSchema.parse(await body(req));
+				await options.hub.setAdvisor(parsePathParam(advisorMatch[1]!), enabled);
+				return json({ advisor: enabled } satisfies AdvisorResponse);
 			}
 			const respondMatch = path.match(/^\/v1\/sessions\/([^/]+)\/interactions\/([^/]+)\/respond$/);
 			if (respondMatch && req.method === "POST")

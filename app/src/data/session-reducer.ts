@@ -20,6 +20,7 @@ export type SessionViewState =
 			olderCursor?: string;
 			pending: PendingInteraction[];
 			modelRole: ModelRole | null;
+			advisor: boolean;
 			loadingOlder: boolean;
 	  };
 
@@ -30,6 +31,7 @@ export type SessionAction =
 	| { type: "older.error" }
 	| { type: "server"; message: ServerMessage }
 	| { type: "modelRole"; modelRole: ModelRole | null }
+	| { type: "advisor"; advisor: boolean }
 	| { type: "error"; message: string };
 
 export function upsert(current: TimelineItem[], additions: TimelineItem[]): TimelineItem[] {
@@ -50,12 +52,13 @@ export function upsert(current: TimelineItem[], additions: TimelineItem[]): Time
 }
 
 function ready(snapshot: SessionSnapshot): SessionViewState {
-	// Servers older than the model-role or agents fields omit them.
+	// Servers older than the model-role, advisor, or agents fields omit them.
 	return {
 		kind: "ready",
 		...snapshot,
 		items: upsert([], snapshot.items),
 		modelRole: snapshot.modelRole ?? null,
+		advisor: snapshot.advisor ?? false,
 		agents: snapshot.agents ?? [],
 		loadingOlder: false,
 	};
@@ -73,6 +76,8 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 			return { ...state, loadingOlder: false };
 		case "modelRole":
 			return { ...state, modelRole: action.modelRole };
+		case "advisor":
+			return { ...state, advisor: action.advisor };
 		case "older.success":
 			return {
 				...state,
@@ -96,6 +101,8 @@ export function sessionViewReducer(state: SessionViewState, action: SessionActio
 					return { ...state, session: message.session, pending: message.pending };
 				case "session.modelRole":
 					return { ...state, modelRole: message.modelRole };
+				case "session.advisor":
+					return { ...state, advisor: message.advisor };
 				case "session.agents":
 					return { ...state, agents: message.agents };
 				default:

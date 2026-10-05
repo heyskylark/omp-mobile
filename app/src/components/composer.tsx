@@ -150,6 +150,9 @@ export function Composer({
 	modelRole,
 	onModelRoleChange,
 	modelRoleDisabled,
+	advisor,
+	onAdvisorChange,
+	advisorDisabled,
 	skills = [],
 	onInputNativeIDChange,
 }: {
@@ -167,6 +170,9 @@ export function Composer({
 	modelRole: ModelRole | null;
 	onModelRoleChange(role: ModelRole): void;
 	modelRoleDisabled?: boolean;
+	advisor: boolean;
+	onAdvisorChange(enabled: boolean): void;
+	advisorDisabled?: boolean;
 	/** Skills offered after `/skill:`; none hides the completion menu. */
 	skills?: readonly SkillCommand[];
 	/** Reports the text field's current `nativeID`, which a `KeyboardGestureArea` needs to extend its swipe area. */
@@ -247,6 +253,13 @@ export function Composer({
 						onSelect: onAttach,
 					},
 					{ label: "Usage", icon: "gauge.with.dots.needle.67percent", onSelect: openUsage },
+					{
+						label: "Advisor",
+						icon: "eyes",
+						checked: advisor,
+						disabled: advisorDisabled,
+						onSelect: () => onAdvisorChange(!advisor),
+					},
 				]}
 			/>
 		</Animated.View>

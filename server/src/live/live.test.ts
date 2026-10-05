@@ -90,6 +90,9 @@ function stubHistory(sessions: SessionMeta[] = []): History {
 		async readModelRole() {
 			return "default" as const;
 		},
+		async readAdvisor() {
+			return false;
+		},
 		async recentProjects() {
 			return [];
 		},
@@ -301,6 +304,52 @@ for await (const line of console) {
 			);
 		} finally {
 			errors.mockRestore();
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("turns the advisor back off and records nothing when OMP has no advisor model", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		const advisorReplies = [
+			'\tif (command.type === "prompt") require("node:fs").appendFileSync("prompts.log", command.message + "\\n");',
+			"\tconst advisorReply = {",
+			`\t\t"/advisor on": "Advisor setting enabled, but no model is assigned to the 'advisor' role.",`,
+			'\t\t"/advisor off": "Advisor disabled.",',
+			"\t}[command.message];",
+			"\tif (advisorReply) {",
+			'\t\tout({ type: "command_output", text: advisorReply });',
+			'\t\tout({ type: "response", id: command.id, success: true });',
+			"\t\tcontinue;",
+			"\t}",
+			'\tif (command.type === "get_state")',
+		].join("\n");
+		await writeFile(ompPath, fakeOmp.replace('\tif (command.type === "get_state")', advisorReplies), { mode: 0o755 });
+		const hub = createLiveHub({
+			history: stubHistory(),
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs: 60_000,
+		});
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
+			await until(() => {
+				const liveness = hub.overlay(sessionId).liveness;
+				return liveness.kind === "server" && liveness.phase === "ready";
+			}, "the first turn to settle");
+			await expect(hub.setAdvisor(sessionId, true)).rejects.toThrow(
+				"Advisor setting enabled, but no model is assigned to the 'advisor' role.",
+			);
+			expect((await hub.snapshot(sessionId, 40))?.advisor).toBe(false);
+			expect((await Bun.file(join(dir, "prompts.log")).text()).split("\n")).toEqual([
+				"first",
+				"/advisor on",
+				"/advisor off",
+				"",
+			]);
+		} finally {
 			await hub.stop();
 			await rm(dir, { recursive: true, force: true });
 		}

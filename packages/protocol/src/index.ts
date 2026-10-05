@@ -175,6 +175,8 @@ export interface SessionSnapshot {
 	pending: PendingInteraction[];
 	/** Active OMP model role; null when the session runs a model chosen outside these roles. */
 	modelRole: ModelRole | null;
+	/** Whether OMP's advisor (a second model on the `advisor` role) reviews each turn and injects notes. */
+	advisor: boolean;
 	/** Every agent of the session, nested ones included. */
 	agents: AgentSummary[];
 }
@@ -240,6 +242,8 @@ export interface CreateSessionRequest {
 	images?: ImageAttachment[];
 	/** Model role for the first turn. Omitted means OMP's default role. */
 	modelRole?: ModelRole;
+	/** Starts the session with OMP's advisor on. Omitted means off. */
+	advisor?: boolean;
 }
 
 export interface PromptRequest {
@@ -255,6 +259,15 @@ export interface ModelRoleRequest {
 
 export interface ModelRoleResponse {
 	modelRole: ModelRole;
+}
+
+/** Body of `POST /v1/sessions/:id/advisor`; the response is `AdvisorResponse`. */
+export interface AdvisorRequest {
+	enabled: boolean;
+}
+
+export interface AdvisorResponse {
+	advisor: boolean;
 }
 
 /** A skill OMP runs when a prompt contains `/skill:<name>`; user-level and project-level skills alike. */
@@ -365,6 +378,7 @@ export type ServerMessage =
 	| { type: "timeline.retire"; sessionId: string; ids: string[] }
 	| { type: "session.update"; sessionId: string; session: SessionSummary; pending: PendingInteraction[] }
 	| { type: "session.modelRole"; sessionId: string; modelRole: ModelRole | null }
+	| { type: "session.advisor"; sessionId: string; advisor: boolean }
 	/** Replaces the session's agents; sent to session subscribers. */
 	| { type: "session.agents"; sessionId: string; agents: AgentSummary[] }
 	/** Upserts items of one agent's thread; sent only to that agent's subscribers. */
