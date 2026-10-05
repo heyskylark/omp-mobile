@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -14,7 +14,7 @@ import {
 } from "@omp-mobile/protocol";
 import { AgentsButton } from "../../../../../components/agent-menu";
 import { ChatImageProvider } from "../../../../../components/chat-image";
-import { ChatList } from "../../../../../components/chat-list";
+import { ChatList, type ChatListHandle } from "../../../../../components/chat-list";
 import { Composer, useComposerDraft } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
 import { livenessLabel } from "../../../../../components/session-meta";
@@ -57,6 +57,7 @@ export default function SessionScreen() {
 	const keyboard = useReanimatedKeyboardAnimation();
 	const restingBottom = Math.max(insets.bottom, KEYBOARD_GAP);
 	const composerHeight = useSharedValue(0);
+	const chat = useRef<ChatListHandle>(null);
 	const [gestureOffset, setGestureOffset] = useState(0);
 	const [inputNativeID, setInputNativeID] = useState<string>();
 	// Rides exactly on the keyboard (same speed, 8 pt above it) until the keyboard drops below the resting place.
@@ -216,6 +217,7 @@ export default function SessionScreen() {
 		draft.setText("");
 		draft.setImages([]);
 		outbox.send(api, text, images, view.items);
+		chat.current?.scrollToNewest();
 		await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 	};
 	const resolveFailed = (message: OutgoingMessage) => {
@@ -286,6 +288,7 @@ export default function SessionScreen() {
 					style={styles.fill}
 				>
 					<ChatList
+						ref={chat}
 						data={newestFirst}
 						extraData={[skillNames, agentsById]}
 						keyExtractor={(row) => (row.kind === "item" ? row.item.id : row.message.operationId)}
