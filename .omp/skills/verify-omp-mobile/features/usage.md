@@ -1,10 +1,10 @@
 # Usage
 
-The composer's `+` button (`Composer menu`) opens a menu with **Photos** and **Usage**. **Usage** opens a sheet with the subscription limits of every provider account signed in to OMP on the computer. The server answers `GET /v1/usage` by running `omp usage --json`. Nothing reaches the agent, and typing `/usage` is an ordinary prompt.
+The composer's `+` button (`Composer menu`) opens a menu with **Photos**, **Usage**, and the **Advisor** switch (`advisor.md`). **Usage** opens a sheet with the subscription limits of every provider account signed in to OMP on the computer. The server answers `GET /v1/usage` by running `omp usage --json`. Nothing reaches the agent, and typing `/usage` is an ordinary prompt.
 
 ## Sub-features
 
-- `usage-menu`: tapping `Composer menu` opens a blurred card just above the composer, keyboard left as it was, with `Photos` (photo library; dimmed when four images are attached) and `Usage`. Tapping outside closes it. **Exercised** (`usage.yaml`).
+- `usage-menu`: tapping `Composer menu` opens a blurred card just above the composer, keyboard left as it was, with `Photos` (photo library; dimmed when four images are attached), `Usage`, and `Advisor`. Tapping outside closes it. **Exercised** (`usage.yaml`).
 - `usage-new-session`: `Composer menu` → `Usage` on New session opens the sheet, even before a project is picked. **Exercised** (`usage.yaml`). The run's roots hold no sessions until the flow creates one, so only the flow's first pass on a run starts with no project picked.
 - `usage-session`: `Composer menu` → `Usage` in an open session opens the sheet and sends no prompt. **Exercised.**
 - `usage-close`: the top-left `Close` button dismisses the sheet. **Exercised.**

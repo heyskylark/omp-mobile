@@ -33,7 +33,8 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 - [Live session, questions, and approvals](./live-session-interactions.md) — approve/deny, questions, follow-up, stop, hand off, terminal (Collab) sessions, notification actions.
 - [Model roles and the composer](./model-role.md) — compact pill and expanded toolbar, role slider, new-session role, switching an open session.
 - [Skill completion](./skills.md) — `/skill:` menu with user, project, and plugin skills, fuzzy filter, tap to complete, typed command in the transcript.
-- [Usage](./usage.md) — composer `+` menu (Photos, Usage), usage sheet from New session and an open session, Close button, swipe down, empty state.
+- [Usage](./usage.md) — composer `+` menu (Photos, Usage, Advisor), usage sheet from New session and an open session, Close button, swipe down, empty state.
+- [Advisor](./advisor.md) — `Advisor` switch in the composer `+` menu, new-session advisor, turning it off in an open session, restore after OMP restarts, no `advisor` role model.
 - [Agent threads](./agent-threads.md) — running-agents indicator, `task` card chips, agents menu, read-only agent and nested-agent threads, step updates, `Finished` rows, no phantom sessions.
 - [Browser live view](./browser.md) — header `Browser` button and `Open browser` card action, live frames, take control and hand back, tap and keyboard input, tab picker, locked-screen state, fake relay.
 - [Transcript images](./images.md) — images in messages, tool images (screenshots, read image files), full-screen viewer, live tool images, `GET /v1/images/:id`.

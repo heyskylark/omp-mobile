@@ -1,0 +1,68 @@
+# Starts a session with the advisor on from the composer's + menu, then turns it off in the open session. Costs one
+# small model turn plus one advisor review on the user's `advisor` role model.
+# env: MACHINE_NAME, PROMPT
+appId: com.heyskylark.ompmobile
+name: advisor
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: ".*project.*"
+    timeout: 15000
+- tapOn: "Composer menu"
+- extendedWaitUntil:
+    visible: "Advisor"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: advisor-01-menu-off
+- tapOn: "Advisor"
+- extendedWaitUntil:
+    notVisible: "Advisor"
+    timeout: 10000
+- tapOn: "Composer menu"
+- extendedWaitUntil:
+    visible: "Advisor"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: advisor-02-menu-on-new-session
+- tapOn: "Close menu"
+- tapOn: "Message OMP"
+- inputText: ${PROMPT}
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Session menu"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 180000
+- tapOn: "Composer menu"
+- extendedWaitUntil:
+    visible: "Advisor"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: advisor-03-session-menu-on
+- tapOn: "Advisor"
+- takeScreenshot: advisor-04-tapped-off
+- extendedWaitUntil:
+    notVisible: "Advisor"
+    timeout: 10000
+- tapOn: "Composer menu"
+- extendedWaitUntil:
+    visible: "Advisor"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: advisor-05-session-menu-off
+- tapOn: "Close menu"
