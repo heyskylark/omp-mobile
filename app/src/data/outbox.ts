@@ -79,7 +79,7 @@ export class SessionOutbox {
 						shownAfter,
 					}
 				: { ...failed, status: { kind: "sending" }, shownAfter };
-		this.#replace(operationId, message);
+		this.#update([...this.messages.filter((pending) => pending.operationId !== operationId), message]);
 		void this.#post(api, message);
 	}
 
@@ -208,14 +208,14 @@ export type ChatRow = { kind: "item"; item: TimelineItem } | { kind: "outgoing";
 /**
  * The transcript (oldest first) with each outgoing message after the items it was sent after, so a reply that
  * reaches the transcript before its prompt (a new session's first turn) still shows below that prompt. OMP records
- * user messages in the order it takes them, so a pending one also follows every recorded user message.
+ * user messages in the order it takes them, so a message it may still record also follows every recorded one.
  */
 export function chatRows(items: TimelineItem[], outgoing: OutgoingMessage[]): ChatRow[] {
 	const lastUser = items.findLastIndex((item) => item.kind === "user");
 	// Index of the item each message follows; -1 puts it before the whole transcript.
 	const follows = outgoing.map((message) =>
 		Math.max(
-			lastUser,
+			message.status.kind === "failed" ? -1 : lastUser,
 			items.findLastIndex((item) => item.at <= message.shownAfter),
 		),
 	);
