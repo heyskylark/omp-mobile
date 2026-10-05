@@ -52,6 +52,7 @@ export default function SessionScreen() {
 	const outgoing = useOutgoing(outbox);
 	const [responding, setResponding] = useState(false);
 	const [changingRole, setChangingRole] = useState(false);
+	const [changingAdvisor, setChangingAdvisor] = useState(false);
 	const [browserAvailable, setBrowserAvailable] = useState(false);
 	// The composer floats over the transcript and rides the keyboard, following it during an interactive dismiss.
 	const keyboard = useReanimatedKeyboardAnimation();
@@ -267,8 +268,23 @@ export default function SessionScreen() {
 			setChangingRole(false);
 		}
 	};
-	// The server refuses role changes for sessions it cannot drive.
-	const roleLocked = ["terminal", "conflict", "unavailable"].includes(view.session.liveness.kind);
+	const changeAdvisor = async (enabled: boolean) => {
+		const previous = view.advisor;
+		dispatch({ type: "advisor", advisor: enabled });
+		setChangingAdvisor(true);
+		void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+		try {
+			const result = await api.setAdvisor(sessionId, enabled);
+			dispatch({ type: "advisor", advisor: result.advisor });
+		} catch (error) {
+			dispatch({ type: "advisor", advisor: previous });
+			show(error instanceof Error ? error.message : "Could not change the advisor", "error");
+		} finally {
+			setChangingAdvisor(false);
+		}
+	};
+	// The server refuses role and advisor changes for sessions it cannot drive.
+	const locked = ["terminal", "conflict", "unavailable"].includes(view.session.liveness.kind);
 
 	// While a turn runs, its unfinished tool calls stay at the bottom in start order; tools that finish later
 	// (and their results) are timestamped after them and would otherwise push them up the transcript.
@@ -348,7 +364,10 @@ export default function SessionScreen() {
 						onRemoveImage={draft.remove}
 						modelRole={view.modelRole}
 						onModelRoleChange={(role) => void changeModelRole(role)}
-						modelRoleDisabled={changingRole || roleLocked}
+						modelRoleDisabled={changingRole || locked}
+						advisor={view.advisor}
+						onAdvisorChange={(enabled) => void changeAdvisor(enabled)}
+						advisorDisabled={changingAdvisor || locked}
 						skills={skills}
 						onInputNativeIDChange={setInputNativeID}
 					/>

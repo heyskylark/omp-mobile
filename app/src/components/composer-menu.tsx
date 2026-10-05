@@ -2,7 +2,7 @@ import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import type { SFSymbol } from "expo-symbols";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { BackHandler, Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
+import { BackHandler, Keyboard, Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from "react-native-reanimated";
 import { useOverlay } from "./overlay";
 import { Icon } from "./ui";
@@ -14,6 +14,8 @@ export type ComposerMenuItem = {
 	label: string;
 	icon: SFSymbol;
 	disabled?: boolean;
+	/** Makes the row a toggle showing this state; `onSelect` should flip it. */
+	checked?: boolean;
 	onSelect(): void;
 };
 
@@ -130,25 +132,40 @@ function ComposerMenu({
 				<BlurView tint="dark" intensity={50} style={StyleSheet.absoluteFill} />
 				<View style={[StyleSheet.absoluteFill, styles.tint]} />
 				{items.map((item) => (
-					<Pressable
-						key={item.label}
-						accessibilityRole="button"
-						accessibilityLabel={item.label}
-						disabled={item.disabled}
-						onPress={() => {
-							void Haptics.selectionAsync();
-							dismiss(item.onSelect);
-						}}
-						className="flex-row items-center gap-4 rounded-[20px] px-2 py-2 active:bg-white/10 disabled:opacity-35"
-					>
-						<View style={styles.iconWell}>
-							<Icon name={item.icon} size={19} color="#ECECEE" />
-						</View>
-						<Text className="text-[17px] text-primary">{item.label}</Text>
-					</Pressable>
+					<MenuRow key={item.label} item={item} onPress={() => dismiss(item.onSelect)} />
 				))}
 			</Animated.View>
 		</View>
+	);
+}
+
+function MenuRow({ item, onPress }: { item: ComposerMenuItem; onPress(): void }) {
+	// Flips at once so the switch visibly moves during the menu's exit fade, before `onSelect` runs.
+	const [checked, setChecked] = useState(item.checked);
+	const toggle = checked !== undefined;
+	return (
+		<Pressable
+			accessibilityRole={toggle ? "switch" : "button"}
+			accessibilityLabel={item.label}
+			accessibilityState={toggle ? { checked, disabled: item.disabled } : undefined}
+			disabled={item.disabled}
+			onPress={() => {
+				void Haptics.selectionAsync();
+				if (toggle) setChecked(!checked);
+				onPress();
+			}}
+			className="flex-row items-center gap-4 rounded-[20px] px-2 py-2 active:bg-white/10 disabled:opacity-35"
+		>
+			<View style={styles.iconWell}>
+				<Icon name={item.icon} size={19} color="#ECECEE" />
+			</View>
+			<Text className="text-[17px] text-primary">{item.label}</Text>
+			{toggle ? (
+				<View pointerEvents="none" className="ml-auto">
+					<Switch value={checked} />
+				</View>
+			) : null}
+		</Pressable>
 	);
 }
 
