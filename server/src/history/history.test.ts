@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdtemp, mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { TimelineItem } from "@omp-mobile/protocol";
 import { createHistory, InvalidHistoryCursorError, ProjectPathError } from "./index";
 
 /** A PNG signature and IHDR chunk for a `width`×`height` image: all the server reads of a PNG. */
@@ -604,5 +605,89 @@ describe("filtered session listing", () => {
 		await expect(history.listSessions({ limit: 1, query: "sesion", cursor: first.nextCursor })).rejects.toBeInstanceOf(
 			InvalidHistoryCursorError,
 		);
+	});
+});
+
+describe("sessions OMP moved to a new file", () => {
+	const at = (seconds: number) => new Date(Date.UTC(2026, 0, 1, 10, 0, seconds)).toISOString();
+	const message = (id: string, parentId: string | null, seconds: number, role: string, text: string) => ({
+		type: "message",
+		id,
+		parentId,
+		timestamp: at(seconds),
+		message: { role, timestamp: Date.parse(at(seconds)), content: [{ type: "text", text }] },
+	});
+	const lines = (records: object[]) => records.map((record) => `${JSON.stringify(record)}\n`).join("");
+
+	// The shape OMP 18.13 leaves when a second omp process resumes a session a terminal holds: the terminal's file keeps
+	// its turns (and later a `session_exit` entry), and the new file copies them, then takes the phone's message.
+	async function moved() {
+		const root = await mkdtemp(join(tmpdir(), "omp-mobile-moved-"));
+		temporary.push(root);
+		const sessionsDir = join(root, "sessions");
+		const cwd = join(root, "projects", "alpha");
+		await mkdir(join(sessionsDir, "bucket"), { recursive: true });
+		const first = join(sessionsDir, "bucket", "2026-01-01T10-00-00-000Z_first.jsonl");
+		const copy = join(sessionsDir, "bucket", "2026-01-01T10-05-00-000Z_moved.jsonl");
+		const turns = [message("u1", null, 1, "user", "From the terminal"), message("a1", "u1", 2, "assistant", "Hi")];
+		await writeFile(first, lines([{ type: "session", version: 3, id: "first", cwd, timestamp: at(0) }, ...turns]));
+		await writeFile(
+			copy,
+			lines([
+				{
+					type: "session",
+					version: 3,
+					id: "moved",
+					parentSession: "first",
+					continuationOf: "first",
+					cwd,
+					timestamp: at(300),
+				},
+				...turns,
+				message("u2", "a1", 301, "user", "From the phone"),
+				message("a2", "u2", 302, "assistant", "Done"),
+			]),
+		);
+		await appendFile(
+			first,
+			lines([{ type: "custom", customType: "session_exit", id: "x1", parentId: "a1", timestamp: at(360) }]),
+		);
+		const history = createHistory({
+			sessionsDir,
+			blobsDir: join(root, "blobs"),
+			roots: [join(root, "projects")],
+			cursorSecret: new TextEncoder().encode("secret"),
+		});
+		return { history, first, copy };
+	}
+	const userTexts = (items: TimelineItem[]) =>
+		items.flatMap((item) =>
+			item.kind === "user" ? [item.blocks.map((block) => (block.kind === "text" ? block.text : "")).join("")] : [],
+		);
+
+	test("is one session under its first id that reads the file OMP moved it to", async () => {
+		const { history, first, copy } = await moved();
+		expect((await history.listSessions({ limit: 10 })).items).toEqual([
+			expect.objectContaining({ id: "first", file: copy, createdAt: at(0), title: "From the terminal" }),
+		]);
+		for (const id of ["first", "moved"])
+			expect(await history.getSession(id)).toEqual(expect.objectContaining({ id: "first", file: copy }));
+		expect(await history.getSessionByFile(first)).toEqual(expect.objectContaining({ id: "first", file: copy }));
+		expect(userTexts((await history.readTimeline("first", { limit: 10 })).items)).toEqual([
+			"From the terminal",
+			"From the phone",
+		]);
+		// The copy keeps entry ids, so a live session's tail cursor from the first file still applies.
+		expect(userTexts((await history.readTail("first", { afterEntryId: "a1", limit: 10 })).items)).toEqual([
+			"From the phone",
+		]);
+	});
+
+	test("follows the copy with the newest turn, as OMP's --resume does", async () => {
+		const { history, first, copy } = await moved();
+		await appendFile(first, lines([message("u3", "x1", 400, "user", "Terminal went on")]));
+		expect(await history.getSession("moved")).toEqual(expect.objectContaining({ id: "first", file: first }));
+		await rm(first);
+		expect(await history.getSession("first")).toEqual(expect.objectContaining({ id: "first", file: copy }));
 	});
 });

@@ -4,10 +4,26 @@ import type { RecentProject, SessionStatus } from "@omp-mobile/protocol";
 import type { SessionMeta } from "./api";
 import { parseHeader, parseLine, textFromContent } from "./jsonl";
 
+/** One session file as scanned, before moved sessions are joined. */
+interface ScannedSession {
+	meta: SessionMeta;
+	/** Header `continuationOf`: the id of the session OMP moved into this file. */
+	continuationOf?: string;
+	/** Time of the file's newest turn, in ms. */
+	lastTurnAt: number;
+}
+
 interface CacheEntry {
 	mtimeMs: number;
 	size: number;
-	meta?: SessionMeta;
+	session?: ScannedSession;
+}
+
+/** Session catalog with each chain of moved files joined into one session; see `resolveMoves`. */
+interface Index {
+	sessions: SessionMeta[];
+	byId: Map<string, SessionMeta>;
+	byFile: Map<string, SessionMeta>;
 }
 
 export async function readSlices(file: string, size: number) {
@@ -96,6 +112,73 @@ function lastAssistantText(suffix: string) {
 	return undefined;
 }
 
+/** Entries OMP counts as turns when it picks which copy of a moved session to resume. */
+const TURN_ENTRIES: Record<string, true> = {
+	message: true,
+	custom_message: true,
+	branch_summary: true,
+	reset_boundary: true,
+};
+
+function lastTurnAt(suffix: string): number | undefined {
+	const lines = suffix.split(/\r?\n/);
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const value = parseLine(lines[index] ?? "");
+		if (typeof value?.type !== "string" || !Object.hasOwn(TURN_ENTRIES, value.type)) continue;
+		const message =
+			value.message && typeof value.message === "object" ? (value.message as Record<string, unknown>) : {};
+		if ((value.type === "custom_message" ? value.customType : message.customType) === "eval-state-context") continue;
+		const time = typeof value.timestamp === "string" ? Date.parse(value.timestamp) : Number.NaN;
+		if (Number.isFinite(time)) return time;
+	}
+	return undefined;
+}
+
+/**
+ * OMP moves a session it cannot keep writing in place (another omp process holds the file, or the file changed on
+ * disk) to a new file with a new id whose header names the old id as `continuationOf`, after copying its entries.
+ * Each chain of such files is one session here: it keeps the chain's first id, so a phone following that id keeps
+ * seeing and matching its messages, and reads the copy OMP's `--resume` continues. That is the copy with the newest
+ * turn, leaving out files whose turns all went into a later copy, i.e. whose last turn predates a continuation.
+ */
+function resolveMoves(scanned: ScannedSession[]): Index {
+	const byOwnId = new Map(scanned.map((session) => [session.meta.id, session]));
+	const continuations = new Map<string, ScannedSession[]>();
+	const chains = new Map<string, ScannedSession[]>();
+	for (const session of scanned) {
+		if (session.continuationOf)
+			continuations.set(session.continuationOf, [...(continuations.get(session.continuationOf) ?? []), session]);
+		let root = session.meta.id;
+		const seen = new Set([root]);
+		for (let from = session.continuationOf; from && !seen.has(from); from = byOwnId.get(root)?.continuationOf) {
+			seen.add(from);
+			root = from;
+		}
+		chains.set(root, [...(chains.get(root) ?? []), session]);
+	}
+	const index: Index = { sessions: [], byId: new Map(), byFile: new Map() };
+	for (const [root, members] of chains) {
+		const live = members.filter(
+			(member) =>
+				!continuations.get(member.meta.id)?.some((copy) => Date.parse(copy.meta.createdAt) >= member.lastTurnAt),
+		);
+		const current = (live.length ? live : members).reduce((newest, member) =>
+			member.lastTurnAt > newest.lastTurnAt ? member : newest,
+		);
+		const first = byOwnId.get(root) ?? current;
+		const meta =
+			current.meta.id === root ? current.meta : { ...current.meta, id: root, createdAt: first.meta.createdAt };
+		index.sessions.push(meta);
+		index.byId.set(root, meta);
+		for (const member of members) {
+			index.byId.set(member.meta.id, meta);
+			index.byFile.set(member.meta.file, meta);
+		}
+	}
+	index.sessions.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+	return index;
+}
+
 export class SessionCatalog {
 	readonly #sessionsDir: string;
 	readonly #cache = new Map<string, CacheEntry>();
@@ -138,8 +221,8 @@ export class SessionCatalog {
 			return undefined;
 		}
 		const cached = this.#cache.get(file);
-		if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.meta;
-		let meta: SessionMeta | undefined;
+		if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.session;
+		let session: ScannedSession | undefined;
 		try {
 			const slices = await readSlices(file, info.size);
 			const parsed = parseHeader(slices.prefix);
@@ -149,43 +232,56 @@ export class SessionCatalog {
 				const title = (explicit || first || "Untitled").replace(/\s+/g, " ").slice(0, 80);
 				const created = new Date(parsed.header.timestamp ?? (info.birthtimeMs || info.mtimeMs));
 				const preview = lastAssistantText(slices.suffix);
-				meta = {
-					id: parsed.header.id,
-					file,
-					cwd: parsed.header.cwd,
-					title,
-					createdAt: created.toISOString(),
-					updatedAt: info.mtime.toISOString(),
-					status: statusFromSuffix(slices.suffix),
-					...(preview ? { preview } : {}),
+				session = {
+					meta: {
+						id: parsed.header.id,
+						file,
+						cwd: parsed.header.cwd,
+						title,
+						createdAt: created.toISOString(),
+						updatedAt: info.mtime.toISOString(),
+						status: statusFromSuffix(slices.suffix),
+						...(preview ? { preview } : {}),
+					},
+					continuationOf: parsed.header.continuationOf,
+					lastTurnAt: lastTurnAt(slices.suffix) ?? created.getTime(),
 				};
 			}
 		} catch {}
-		this.#cache.set(file, { mtimeMs: info.mtimeMs, size: info.size, meta });
-		return meta;
+		this.#cache.set(file, { mtimeMs: info.mtimeMs, size: info.size, session });
+		return session;
 	}
 
-	async all() {
+	async #index(): Promise<Index> {
 		const files = await this.files();
-		const results: SessionMeta[] = [];
+		const results: ScannedSession[] = [];
 		let next = 0;
 		const workers = Array.from({ length: Math.min(16, Math.max(1, Math.ceil(files.length / 64))) }, async () => {
 			for (;;) {
 				const index = next++;
 				const file = files[index];
 				if (!file) break;
-				const meta = await this.#scan(file);
-				if (meta) results.push(meta);
+				const session = await this.#scan(file);
+				if (session) results.push(session);
 			}
 		});
 		await Promise.all(workers);
-		results.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-		return results;
+		return resolveMoves(results);
 	}
 
+	/** Newest first; a moved session appears once, under its first id. */
+	async all() {
+		return (await this.#index()).sessions;
+	}
+
+	/** Any id of a moved session finds it under its first id, stored in the file OMP resumes. */
 	async find(id: string) {
-		const all = await this.all();
-		return all.find((meta) => meta.id === id) ?? null;
+		return (await this.#index()).byId.get(id) ?? null;
+	}
+
+	/** Like `find`, for any file of a moved session. */
+	async findByFile(file: string) {
+		return (await this.#index()).byFile.get(file) ?? null;
 	}
 
 	async recentProjects(limit: number): Promise<RecentProject[]> {
