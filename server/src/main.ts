@@ -1,10 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
-import { homedir, hostname } from "node:os";
+import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createBrowserService } from "./browser/index.ts";
 import { loadConfig } from "./config.ts";
+import { loadMachineId } from "./machine-id.ts";
 import { createHistory } from "./history/index.ts";
 import { startHttp, type HttpService } from "./http/index.ts";
 import { createJobService, createJobStore, type JobService } from "./jobs/index.ts";
@@ -28,9 +29,9 @@ async function main(): Promise<void> {
 	const config = await loadConfig();
 	const adminToken = randomBytes(32).toString("base64url");
 	const extensionToken = randomBytes(32).toString("base64url");
-	const machineId = createHash("sha256").update(`omp-mobile:${hostname()}`).digest("base64url").slice(0, 32);
 	const devices = createDeviceStore(join(config.dataDir, "devices.json"));
 	await devices.load();
+	const machineId = await loadMachineId(config.dataDir, { paired: devices.list().length > 0 });
 	const history = createHistory({
 		sessionsDir: join(homedir(), ".omp", "agent", "sessions"),
 		blobsDir: join(homedir(), ".omp", "agent", "blobs"),

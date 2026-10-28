@@ -67,7 +67,7 @@ Preconditions: app paired to this run's server.
   ```
 
   Pass: `search-01-list` shows the field and chips over the dated list, `search-02-query` only the API's matches for the typo, `search-03-project` only that project's sessions, `search-04-no-match` `No matching sessions`. For the cursor binding, take `nextCursor` from a small filtered page (`limit=2&project=…`) and reuse it with another `project` or `q`: `api.ts` exits 1 printing `HTTP 400: {"code":"invalid_cursor",…}`.
-- **Empty history:** prepare a second run (`prepare-run.sh <RUN_ID>-empty <other port>`) and start its server supervised with `HOME=<its SCRATCH> OMP_MOBILE_HOME=<its OMP_MOBILE_HOME> bun server/src/main.ts`. Pair it with `pair-deeplink.yaml`; its session list shows `No sessions yet`, and `api.ts <RUN_ID>-empty get '/v1/sessions?limit=5'` returns no items. This replaces the first run's computer on the phone (SKILL.md Scope).
+- **Empty history:** prepare a second run (`prepare-run.sh <RUN_ID>-empty <other port>`) and start its server supervised with `HOME=<its SCRATCH> OMP_MOBILE_HOME=<its OMP_MOBILE_HOME> bun server/src/main.ts`. Pair it with `pair-deeplink.yaml`; its session list shows `No sessions yet`, and `api.ts <RUN_ID>-empty get '/v1/sessions?limit=5'` returns no items. It appears on the phone as a second computer next to the first run's (SKILL.md Scope).
 
 ## Gotchas
 
