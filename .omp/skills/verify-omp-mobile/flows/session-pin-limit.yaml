@@ -1,0 +1,31 @@
+# With five sessions already pinned, waits for the list to show them under Pinned, then tries to pin a sixth and
+# expects the computer's refusal as an error toast.
+# env: MACHINE_NAME, FIRST_PIN_TITLE (escaped title of the earliest pin), SIXTH_TITLE (escaped unpinned title)
+appId: com.heyskylark.ompmobile
+name: session-pin-limit
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: "Pinned"
+    timeout: 30000
+- assertVisible: "${FIRST_PIN_TITLE},.*"
+- waitForAnimationToEnd
+- takeScreenshot: limit-01-five-pinned
+- scrollUntilVisible:
+    element: "${SIXTH_TITLE},.*"
+    direction: DOWN
+- swipe:
+    from: "${SIXTH_TITLE},.*"
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "Pin"
+    timeout: 5000
+- tapOn: "Pin"
+- extendedWaitUntil:
+    visible: ".*up to 5 sessions.*"
+    timeout: 10000
+- takeScreenshot: limit-02-refused

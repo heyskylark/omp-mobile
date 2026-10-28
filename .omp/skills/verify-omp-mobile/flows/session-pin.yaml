@@ -1,0 +1,45 @@
+# Pins a session from the computer's session list by swiping its row left, checks it moves into the Pinned section
+# at the top, then unpins it the same way. Rows read "<title>, <project>, · <age>, <preview>".
+# env: MACHINE_NAME, PIN_TITLE (escaped regex of an unpinned session title on the first screen)
+appId: com.heyskylark.ompmobile
+name: session-pin
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- extendedWaitUntil:
+    visible: "${PIN_TITLE},.*"
+    timeout: 30000
+- assertNotVisible: "Pinned"
+- waitForAnimationToEnd
+- takeScreenshot: pin-01-list
+- swipe:
+    from: "${PIN_TITLE},.*"
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "Pin"
+    timeout: 5000
+- waitForAnimationToEnd
+- takeScreenshot: pin-02-action
+- tapOn: "Pin"
+- extendedWaitUntil:
+    visible: "Pinned"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: pin-03-pinned
+- swipe:
+    from: "${PIN_TITLE},.*"
+    direction: LEFT
+- extendedWaitUntil:
+    visible: "Unpin"
+    timeout: 5000
+- waitForAnimationToEnd
+- takeScreenshot: pin-04-unpin-action
+- tapOn: "Unpin"
+- extendedWaitUntil:
+    notVisible: "Pinned"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: pin-05-unpinned

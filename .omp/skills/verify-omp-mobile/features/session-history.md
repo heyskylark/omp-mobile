@@ -1,11 +1,12 @@
 # Session history
 
-The user browses every OMP session on a paired computer, newest first, and opens any transcript; long transcripts load older pages as the user scrolls up, and thoughts and tool calls expand in place.
+The user browses every OMP session on a paired computer, pinned sessions first and then newest first, and opens any transcript; long transcripts load older pages as the user scrolls up, and thoughts and tool calls expand in place.
 
 ## Sub-features
 
 - `history-list`: computer row → session list grouped `TODAY` / `YESTERDAY` / `EARLIER` (source `Today`/`Yesterday`/`Earlier`, styled uppercase), each row with title, project, age, preview, and liveness (`Needs you`, `In terminal`, `Running`, `Conflict`, `Unavailable`). The app asks for 30 sessions per page. **Exercised.**
 - `history-search`: `Search sessions` field (debounced fuzzy title search on the Mac) and a horizontal project chip row (`All` + recent projects) above the list. A query lists matches as one flat, relevance-ordered section; a chip narrows to that project's cwd; no results show `No matching sessions` (distinct from `No sessions yet`). `GET /v1/sessions?limit=30&project=<cwd>&q=<query>`; a cursor reused with another filter returns 400 `invalid_cursor`. **Exercised** (`session-search.yaml`).
+- `history-pin`: swiping a row left offers `Pin` (or `Unpin` on a pinned row); a pinned session moves to a `PINNED` section (source `Pinned`) above the dated groups, earliest pin first, with a pin icon after its title. The computer stores at most 5 pins in `<OMP_MOBILE_HOME>/pins.json` and refuses a sixth with 409 `conflict`, shown as an error toast `You can pin up to 5 sessions. Unpin one first.` Pins apply to the unfiltered and project-filtered lists; a search query lists them in relevance order without the section. Pinning from another device makes the open list refresh (`sessions.changed`). `PUT`/`DELETE /v1/sessions/<id>/pin`. **Exercised** (`session-pin.yaml`, `session-pin-limit.yaml`).
 - `history-open`: tap a row → transcript titled with the session title and project, composer `Message OMP`. **Exercised** (`open-session.yaml`).
 - `history-paging`: scrolling up in a long transcript loads 40 older items (`GET /v1/sessions/<id>/items?before=<olderCursor>&limit=40`); `Loading earlier messages…` shows while it loads. **Exercised** (`transcript-expand-page.yaml`).
 - `history-expand-thought`: `Thought ▾` → `Thought ▴` plus the thinking text (or `Reasoning was redacted.`). **Exercised** (`transcript-expand-page.yaml`).
@@ -67,6 +68,22 @@ Preconditions: app paired to this run's server.
   ```
 
   Pass: `search-01-list` shows the field and chips over the dated list, `search-02-query` only the API's matches for the typo, `search-03-project` only that project's sessions, `search-04-no-match` `No matching sessions`. For the cursor binding, take `nextCursor` from a small filtered page (`limit=2&project=…`) and reuse it with another `project` or `q`: `api.ts` exits 1 printing `HTTP 400: {"code":"invalid_cursor",…}`.
+- **Pins:** pick an unpinned title on the first screen, below the top row so the move is visible, and pin and unpin it from the app:
+
+  ```sh
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pin -e MACHINE_NAME=<MACHINE_NAME> -e 'PIN_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/session-pin.yaml
+  ```
+
+  Pass: `pin-03-pinned` shows the row alone under `PINNED` at the top with a pin icon; `pin-05-unpinned` shows it back in its dated group with no `PINNED` section. Then pin five sessions as the `verify-probe` device (run any `api.ts get` first so it is paired) while the app shows the list, which proves other phones refresh, and try a sixth from the app:
+
+  ```sh
+  TOKEN=$(jq -r .token <SCRATCH>/probe.json)
+  for id in <id1> <id2> <id3> <id4> <id5>; do curl -fsS -X PUT -H "authorization: Bearer $TOKEN" "http://127.0.0.1:<PORT>/v1/sessions/$id/pin"; echo; done
+  .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=30' > <EVIDENCE>/pin-api-five.json
+  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pin-limit -e MACHINE_NAME=<MACHINE_NAME> -e 'FIRST_PIN_TITLE=<escaped title of id1>' -e 'SIXTH_TITLE=<escaped unpinned title>' .omp/skills/verify-omp-mobile/flows/session-pin-limit.yaml
+  ```
+
+  Pass: `pin-api-five.json` starts with the five ids in pin order, each with `pinnedAt`, and no later item repeats them; `limit-01-five-pinned` shows the same five under `PINNED`; `limit-02-refused` shows the toast. Restart the server (kill and start the supervised process again) and fetch the list again: the same five lead it with the same `pinnedAt`.
 - **Empty history:** prepare a second run (`prepare-run.sh <RUN_ID>-empty <other port>`) and start its server supervised with `HOME=<its SCRATCH> OMP_MOBILE_HOME=<its OMP_MOBILE_HOME> bun server/src/main.ts`. Pair it with `pair-deeplink.yaml`; its session list shows `No sessions yet`, and `api.ts <RUN_ID>-empty get '/v1/sessions?limit=5'` returns no items. It appears on the phone as a second computer next to the first run's (SKILL.md Scope).
 
 ## Gotchas
