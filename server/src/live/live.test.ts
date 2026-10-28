@@ -515,6 +515,22 @@ describe("UI request mapping", () => {
 			title: "Allow tool: bash",
 			detail: "Command: echo picked-blue",
 		});
+		// OMP 18.13 adds a session-scoped approval between Approve and Deny.
+		const sessionApproval = normalizeRpcUiRequest({
+			type: "extension_ui_request",
+			id: "15b85ea05cd2c356",
+			method: "select",
+			title: "Allow tool: bash\nCommand: echo hi-capture",
+			options: ["Approve", "Approve bash for this session", "Deny"],
+		})!;
+		expect(requestToPending("s", sessionApproval, "2026-01-01T00:00:00.000Z")).toEqual({
+			id: sessionApproval.id,
+			sessionId: "s",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			kind: "approval",
+			title: "Allow tool: bash",
+			detail: "Command: echo hi-capture",
+		});
 		const ask = normalizeRpcUiRequest({
 			type: "extension_ui_request",
 			id: "1592ec601d0a5bcb",
@@ -573,6 +589,14 @@ describe("responses and receipts", () => {
 				kind: "approve",
 			}),
 		).toEqual({ kind: "send", value: "Approve" });
+		const sessionApproval = record({
+			id: "a",
+			method: "select",
+			title: "Allow tool: bash\nCommand: echo hi-capture",
+			options: ["Approve", "Approve bash for this session", "Deny"],
+		});
+		expect(planResponse(sessionApproval, { kind: "approve" })).toEqual({ kind: "send", value: "Approve" });
+		expect(planResponse(sessionApproval, { kind: "deny" })).toEqual({ kind: "send", value: "Deny" });
 		expect(
 			planResponse(record({ id: "q", method: "select", title: "Color", options: ["Red", "Other (type your own)"] }), {
 				kind: "choice",
