@@ -25,6 +25,8 @@ class Hub implements LiveHub {
 	#problems: string[] = [];
 	#creating = new Map<string, Promise<SessionActor | null>>();
 	#provisional = new Set<string>();
+	/** Later ids of sessions OMP moved to new files, to the first id their actor runs under (`History.getSession`). */
+	#aliases = new Map<string, string>();
 	/** Extension posts are handled one at a time, in arrival order, so a session's events never overtake each other. */
 	#ingesting = Promise.resolve();
 	#skills: SkillCatalog;
@@ -43,7 +45,7 @@ class Hub implements LiveHub {
 		this.#relay = undefined;
 	}
 	overlay(sessionId: string) {
-		const actor = this.#actors.get(sessionId);
+		const actor = this.#actors.get(this.#aliases.get(sessionId) ?? sessionId);
 		return actor
 			? { liveness: actor.liveness, pendingCount: actor.pending.length }
 			: { liveness: { kind: "idle" as const }, pendingCount: 0 };
@@ -275,7 +277,7 @@ class Hub implements LiveHub {
 		return actor;
 	}
 	async #actor(sessionId: string): Promise<SessionActor | null> {
-		const existing = this.#actors.get(sessionId);
+		const existing = this.#actors.get(this.#aliases.get(sessionId) ?? sessionId);
 		if (existing) return existing;
 		const loading = this.#creating.get(sessionId);
 		if (loading) return loading;
@@ -283,9 +285,10 @@ class Hub implements LiveHub {
 			.getSession(sessionId)
 			.then((meta) => {
 				if (!meta) return null;
-				const actor = new SessionActor(meta, this.#opts, this.#hooks());
-				this.#actors.set(sessionId, actor);
-				this.#provisional.delete(sessionId);
+				if (meta.id !== sessionId) this.#aliases.set(sessionId, meta.id);
+				const actor = this.#actors.get(meta.id) ?? new SessionActor(meta, this.#opts, this.#hooks());
+				this.#actors.set(meta.id, actor);
+				this.#provisional.delete(meta.id);
 				return actor;
 			})
 			.finally(() => this.#creating.delete(sessionId));
