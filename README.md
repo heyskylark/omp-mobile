@@ -136,6 +136,8 @@ A pairing code works once and expires after 10 minutes. After a phone uses it, t
 
 To rename a computer, open it in the app, tap the **…** button, edit **Name**, and tap **Save**. The server saves the name to `machineName` in `~/.omp-mobile/config.json` and uses it right away. Other paired phones pick it up the next time they load the Computers list.
 
+The app recognizes a computer by its machine id, which the server creates on first start and stores in `~/.omp-mobile/machine.json` (mode 0600). Changing the computer's host name, for example when a network's DHCP assigns a different one, does not change the id. Servers that paired phones before `machine.json` existed keep the id those phones already know, derived from the Mac's own host name. If you delete `machine.json`, the server starts as a new computer: pair your phones again and remove the old entry from the app.
+
 ## Let agents use your Chrome
 
 OMP agents can drive your everyday Chrome, with the sites you are already signed in to, through the OMP Browser Relay that ships with OMP. The app then shows the tab the agent works in and lets you take it over.
