@@ -183,11 +183,12 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    bunx eas-cli init
    ```
 
-3. Export the project ID that `eas init` printed and your Apple team ID from [Membership details](https://developer.apple.com/account#MembershipDetailsCard).
+3. Export the project ID that `eas init` printed and your Apple team ID from [Membership details](https://developer.apple.com/account#MembershipDetailsCard). If the project belongs to an Expo organization rather than your personal account, also export the organization's account name.
 
    ```sh
    export EAS_PROJECT_ID=<project id>
    export APPLE_TEAM_ID=<team id>
+   export EXPO_OWNER=<organization>  # only for organization-owned projects
    ```
 
 4. Build and submit.
@@ -197,7 +198,7 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    scripts/testflight.sh
    ```
 
-   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles.
+   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist.
 
 5. When the build finishes processing in App Store Connect, open **TestFlight**, add yourself as an internal tester, and install **OMP** from the TestFlight app on your iPhone.
 
@@ -309,7 +310,6 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - The app targets Expo SDK 55 because SDK 56 and later need Xcode 26.4. After you update Xcode, upgrade with `bunx expo install expo@latest --fix` in `app/`.
 - The minimum iOS version is 16.0 instead of SDK 55's default of 15.1. With the iOS 27 SDK, `expo-router` 55 uses APIs that require iOS 16, and `app/plugins/with-pod-deployment-target.js` raises every pod target to the app's deployment target because Xcode 27 rejects the iOS 12.4 and 9.0 targets that some pod resource bundles declare.
 - iOS 27 stops apps that do not use the UIKit scene life cycle at launch, and the SDK 55 template still creates its window in the app delegate. `app/plugins/with-scene-lifecycle.js` adds a scene manifest to Info.plist and a `SceneDelegate` that hosts React Native and forwards URLs and life-cycle events to the app delegate. Expo SDK 58 generates this setup itself, so remove the plugin when upgrading.
-- `scripts/testflight.sh` has not been run yet, because it needs your Apple and Expo accounts. The app config sets `aps-environment` to `development`, and App Store export is expected to switch it to `production` from the distribution profile. Confirm that with the first TestFlight build before relying on push.
 - Push delivery through APNs and decryption in the notification service extension have not been tested on a physical device. The Simulator shows the notification actions and runs the Approve action end to end, but it did not run the extension for `simctl push`.
 - A session opened in a terminal after the server started working on it is not blocked by OMP. The server marks it as a conflict, stops accepting phone input for it, and closes its own process when the turn settles. With OMP 18.13 and later, the terminal writes to a new file instead, as described next.
 - OMP 18.13 and later never let two processes write one session file. A process that cannot keep writing a session in place moves it to a new file with a new id, copies its entries there, and records the old id as `continuationOf` in the new file's header. OMP does this when another omp process has the session open (`open-elsewhere`), when the file changed on disk (`replaced`), and when another program keeps writing to it (`contested`). The server treats each chain of such files as one session: it lists the session once under its first id, so the phone keeps showing and matching its messages, and reads the copy with the newest turn, as `omp --resume` does. When the server's own OMP process moves the session, OMP's `session-persistence` notice tells the server the new file. If both a terminal and the server kept writing after a move, the phone shows only the copy with the newest turn.
