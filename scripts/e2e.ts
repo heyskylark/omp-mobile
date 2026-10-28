@@ -269,15 +269,32 @@ async function phaseA(): Promise<void> {
 		sessions.items.map((item: any) => ({ id: item.id, liveness: item.liveness })),
 	);
 	assert(sessions.items.length > 0, "real session history exists", sessions.items.length);
-	const newest = sessions.items[0];
-	const snapshot = await ok(`/v1/sessions/${encodeURIComponent(newest.id)}?limit=20`);
-	assert(
-		Array.isArray(snapshot.items) && typeof snapshot.olderCursor === "string",
-		"recent session snapshot is pageable",
-		{ id: newest.id, items: snapshot.items?.length, hasCursor: Boolean(snapshot.olderCursor) },
-	);
+	// Earlier e2e runs leave short sessions at the top of history, so page through it for a real session with an older page.
+	const e2eRoots = join(homedir(), ".cache", "omp-mobile-e2e");
+	let pageable: { id: string; snapshot: { items: { id: string }[]; olderCursor: string } } | undefined;
+	let scanned = 0;
+	let cursor: string | undefined;
+	do {
+		const page = await ok(`/v1/sessions?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
+		for (const item of page.items) {
+			const path: string = item.project?.path ?? "";
+			if (path === e2eRoots || path.startsWith(`${e2eRoots}/`)) continue;
+			scanned++;
+			const snapshot = await ok(`/v1/sessions/${encodeURIComponent(item.id)}?limit=20`);
+			if (Array.isArray(snapshot.items) && typeof snapshot.olderCursor === "string") {
+				pageable = { id: item.id, snapshot };
+				break;
+			}
+		}
+		cursor = page.nextCursor;
+	} while (!pageable && cursor);
+	assert(pageable, "a real session in history is pageable (has more than 20 timeline items)", {
+		scanned,
+		pageable: pageable?.id,
+	});
+	const { id: pageableId, snapshot } = pageable;
 	const older = await ok(
-		`/v1/sessions/${encodeURIComponent(newest.id)}/items?limit=20&before=${encodeURIComponent(snapshot.olderCursor)}`,
+		`/v1/sessions/${encodeURIComponent(pageableId)}/items?limit=20&before=${encodeURIComponent(snapshot.olderCursor)}`,
 	);
 	const overlap = older.items
 		.filter((item: any) => snapshot.items.some((recent: any) => recent.id === item.id))
