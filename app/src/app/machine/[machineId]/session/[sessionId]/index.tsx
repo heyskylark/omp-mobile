@@ -17,7 +17,7 @@ import { ChatImageProvider } from "../../../../../components/chat-image";
 import { ChatList, type ChatListHandle } from "../../../../../components/chat-list";
 import { Composer, useComposerDraft } from "../../../../../components/composer";
 import { InteractionPanel } from "../../../../../components/interaction-panel";
-import { livenessLabel } from "../../../../../components/session-meta";
+import { AgentBadge, livenessLabel } from "../../../../../components/session-meta";
 import { OutgoingRow, TimelineRow } from "../../../../../components/timeline";
 import { ErrorState, Icon, Loading } from "../../../../../components/ui";
 import { useToast } from "../../../../../components/toast";
@@ -170,11 +170,14 @@ export default function SessionScreen() {
 					<Text numberOfLines={1} className="text-[16px] font-semibold text-primary">
 						{view.session.title}
 					</Text>
-					<Text numberOfLines={1} className="text-[11px] text-secondary">
-						{view.session.project.name}
-						{badge ? ` · ${badge}` : ""}
-						{running ? ` · ${running} ${running === 1 ? "agent" : "agents"} running` : ""}
-					</Text>
+					<View className="flex-row items-center gap-1.5">
+						{view.session.agent ? <AgentBadge name={view.session.agent} size="small" /> : null}
+						<Text numberOfLines={1} className="shrink text-[11px] text-secondary">
+							{view.session.project.name}
+							{badge ? ` · ${badge}` : ""}
+							{running ? ` · ${running} ${running === 1 ? "agent" : "agents"} running` : ""}
+						</Text>
+					</View>
 				</View>
 			),
 			// An empty headerRight still draws an empty button background.
