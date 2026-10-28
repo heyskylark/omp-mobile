@@ -70,7 +70,8 @@ export function requestToPending(
 ): PendingInteraction {
 	if (request.method === "select") {
 		const options = request.options ?? [];
-		if (options.length === 2 && options[0] === "Approve" && options[1] === "Deny") {
+		// OMP 18.4: ["Approve", "Deny"]; 18.13 inserts session-scoped grants ("Approve bash for this session") between them.
+		if (options[0] === "Approve" && options.at(-1) === "Deny") {
 			const [title = "Approval required", ...detail] = request.title.split("\n");
 			return { id: request.id, sessionId, createdAt, kind: "approval", title, detail: detail.join("\n") };
 		}
