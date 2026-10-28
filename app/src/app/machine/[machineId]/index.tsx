@@ -125,6 +125,12 @@ export default function SessionsScreen() {
 			headerRight: () => (
 				<View className="flex-row gap-4">
 					<Pressable
+						accessibilityLabel="Agents"
+						onPress={() => router.push({ pathname: "/machine/[machineId]/agents", params: { machineId } })}
+					>
+						<Icon name="person.crop.circle" color="#9A9AA2" size={19} />
+					</Pressable>
+					<Pressable
 						accessibilityLabel="Jobs"
 						onPress={() => router.push({ pathname: "/machine/[machineId]/jobs", params: { machineId } })}
 					>
