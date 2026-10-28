@@ -71,6 +71,11 @@ public final class OmpNativeModule: Module {
       }
     }.runOnQueue(.main)
 
+    AsyncFunction("lastNotificationResult") { () -> [String: Any]? in
+      guard let bundleId = Bundle.main.bundleIdentifier else { return nil }
+      return UserDefaults(suiteName: "group.\(bundleId)")?.dictionary(forKey: "omp.notificationService.lastResult")
+    }
+
     AsyncFunction("consumeLaunchNotification") {
       OmpNotificationCoordinator.shared.consumeLaunchOpen()
     }
