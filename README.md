@@ -181,11 +181,12 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    bunx eas-cli init
    ```
 
-3. Export the project ID that `eas init` printed and your Apple team ID from [Membership details](https://developer.apple.com/account#MembershipDetailsCard).
+3. Export the project ID that `eas init` printed and your Apple team ID from [Membership details](https://developer.apple.com/account#MembershipDetailsCard). If the project belongs to an Expo organization rather than your personal account, also export the organization's account name.
 
    ```sh
    export EAS_PROJECT_ID=<project id>
    export APPLE_TEAM_ID=<team id>
+   export EXPO_OWNER=<organization>  # only for organization-owned projects
    ```
 
 4. Build and submit.
@@ -195,7 +196,7 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    scripts/testflight.sh
    ```
 
-   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles.
+   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist.
 
 5. When the build finishes processing in App Store Connect, open **TestFlight**, add yourself as an internal tester, and install **OMP** from the TestFlight app on your iPhone.
 
