@@ -221,7 +221,7 @@ TestFlight builds check the `production` channel of [EAS Update](https://docs.ex
    scripts/ota.sh "Fix message delivery labels"
    ```
 
-The runtime version is a fingerprint of the app's native code and config. An update reaches only builds with the same fingerprint, so a change to native code, a native dependency, `app.config.ts`, or a config plugin needs a new TestFlight build instead. `bunx eas-cli update:list` shows each update's runtime version, and the TestFlight build's runtime version is on its page on expo.dev.
+The runtime version is a fingerprint of the app's native code and config. An update reaches only builds with the same fingerprint, so a change to native code, a native dependency, `app.config.ts`, `app/eas.json`, or a config plugin needs a new TestFlight build instead. `bunx eas-cli fingerprint:compare --build-id <build id> --environment production` in `app/` names the files that differ from a build.
 
 ### Turn on push notifications
 
