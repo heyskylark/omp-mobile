@@ -60,8 +60,13 @@ async function defaultMachineName(): Promise<string> {
 	return hostname();
 }
 
+/** Resolves a configured path, expanding a leading `~` to the home directory as a shell would. */
+function resolveUserPath(path: string): string {
+	return resolve(path.replace(/^~(?=\/|$)/, homedir()));
+}
+
 async function normalizeRoots(paths: string[]): Promise<string[]> {
-	return Promise.all(paths.map(async (path) => realpath(resolve(path.replace(/^~(?=\/|$)/, homedir())))));
+	return Promise.all(paths.map(async (path) => realpath(resolveUserPath(path))));
 }
 
 async function readConfigFile(path: string): Promise<unknown> {
@@ -77,7 +82,7 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
 	const dataDir = resolve(env.OMP_MOBILE_HOME ?? join(homedir(), ".omp-mobile"));
 	await mkdir(dataDir, { recursive: true, mode: 0o700 });
 	const parsed = ConfigSchema.parse(await readConfigFile(join(dataDir, "config.json")));
-	const configuredOmp = parsed.ompPath ? resolve(parsed.ompPath) : resolveOmp(env.PATH);
+	const configuredOmp = parsed.ompPath ? resolveUserPath(parsed.ompPath) : resolveOmp(env.PATH);
 	return {
 		dataDir,
 		port: parsed.port,
@@ -86,7 +91,7 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
 		roots: await normalizeRoots(parsed.roots ?? [homedir()]),
 		ompPath: configuredOmp,
 		...(parsed.rpcArgs ? { rpcArgs: parsed.rpcArgs } : {}),
-		...(parsed.apns ? { apns: { ...parsed.apns, keyPath: resolve(parsed.apns.keyPath) } } : {}),
+		...(parsed.apns ? { apns: { ...parsed.apns, keyPath: resolveUserPath(parsed.apns.keyPath) } } : {}),
 		browserRelayUrl: new URL(parsed.browserRelayUrl),
 	};
 }
