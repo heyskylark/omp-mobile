@@ -11,7 +11,7 @@ import { startHttp, type HttpService } from "./http/index.ts";
 import { createJobService, createJobStore, type JobService } from "./jobs/index.ts";
 import { createLiveHub } from "./live/index.ts";
 import { createPushService, type PushService } from "./push/index.ts";
-import { createDeviceStore } from "./store/index.ts";
+import { createDeviceStore, createPinStore } from "./store/index.ts";
 import { writePrivateJson } from "./private-json.ts";
 
 async function ompVersion(path: string | null): Promise<string | null> {
@@ -32,6 +32,8 @@ async function main(): Promise<void> {
 	const devices = createDeviceStore(join(config.dataDir, "devices.json"));
 	await devices.load();
 	const machineId = await loadMachineId(config.dataDir, { paired: devices.list().length > 0 });
+	const pins = createPinStore(join(config.dataDir, "pins.json"));
+	await pins.load();
 	const history = createHistory({
 		sessionsDir: join(homedir(), ".omp", "agent", "sessions"),
 		blobsDir: join(homedir(), ".omp", "agent", "blobs"),
@@ -68,6 +70,7 @@ async function main(): Promise<void> {
 			adminToken,
 			extensionToken,
 			jobs,
+			pins,
 		});
 		if (config.apns) push = createPushService(config.apns, machineId, devices, hub);
 		await writePrivateJson(serverPath, {

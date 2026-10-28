@@ -4,11 +4,13 @@ import { z } from "zod";
 import {
 	BROWSER_KEYS,
 	MAX_MACHINE_NAME_LENGTH,
+	MAX_PINNED_SESSIONS,
 	MAX_PROMPT_IMAGES,
 	MODEL_ROLES,
 	PROTOCOL_VERSION,
 	type AdvisorResponse,
 	type ModelRoleResponse,
+	type PinResponse,
 	encodePairingUrl,
 	type ApiError,
 	type AdminStatus,
@@ -31,6 +33,7 @@ import { InvalidHistoryCursorError } from "../history/pager.ts";
 import type { ExtensionEvent, LiveHub } from "../live/api.ts";
 import { InvalidScheduleError, type JobService } from "../jobs/index.ts";
 import type { DeviceStore, StoredDevice } from "../store/devices.ts";
+import { PinLimitError, type Pin, type PinStore } from "../store/pins.ts";
 import { watchTailscale, type TailscaleState } from "../tailscale.ts";
 
 const PairSchema = z.object({
@@ -169,6 +172,7 @@ export interface HttpOptions {
 	adminToken: string;
 	extensionToken: string;
 	jobs: JobService;
+	pins: PinStore;
 	serverVersion?: string;
 }
 
@@ -178,6 +182,7 @@ type SocketData =
 			unsubscribers: Map<string, () => void>;
 			unsubscribeBroadcast?: () => void;
 			unsubscribeJobs?: () => void;
+			unsubscribePins?: () => void;
 	  }
 	| { kind: "browser"; token: string; deviceName: string; viewer?: BrowserViewer };
 
@@ -205,6 +210,7 @@ function errorResponse(error: unknown): Response {
 		return json({ code: "invalid_cursor", message: error.message } satisfies ApiError, 400);
 	if (error instanceof InvalidScheduleError)
 		return json({ code: "bad_request", message: error.message } satisfies ApiError, 400);
+	if (error instanceof PinLimitError) return json({ code: "conflict", message: error.message } satisfies ApiError, 409);
 	console.error(error);
 	return json(
 		{
@@ -249,6 +255,28 @@ function summary(meta: SessionMeta, hub: LiveHub): SessionSummary {
 		...(meta.preview ? { preview: meta.preview } : {}),
 		pendingCount: overlay.pendingCount,
 	};
+}
+
+/** The id a session is listed under, whether OMP wrote it yet or not; null when no such session exists. */
+async function listedSessionId(options: HttpOptions, id: string): Promise<string | null> {
+	return (
+		(await options.history.getSession(id))?.id ??
+		options.hub.activeSummaries().find((item) => item.id === id)?.id ??
+		null
+	);
+}
+
+/** Pinned sessions that still exist, in pin order. */
+async function pinnedSummaries(options: HttpOptions, pins: Pin[]): Promise<SessionSummary[]> {
+	const active = new Map(options.hub.activeSummaries().map((item) => [item.id, item]));
+	const found = await Promise.all(
+		pins.map(async ({ sessionId, pinnedAt }) => {
+			const meta = await options.history.getSession(sessionId);
+			const session = meta ? summary(meta, options.hub) : active.get(sessionId);
+			return session ? { ...session, pinnedAt } : null;
+		}),
+	);
+	return found.filter((item) => item !== null);
 }
 
 function serverInfo(options: HttpOptions): ServerInfo {
@@ -401,18 +429,35 @@ export function createHttpHandler(
 				const cursor = url.searchParams.get("cursor") ?? undefined;
 				const project = url.searchParams.get("project") ?? undefined;
 				const query = url.searchParams.get("q") ?? undefined;
+				const filter = sessionFilter(project, query);
+				const pins = options.pins.list();
+				const pinnedAt = new Map(pins.map((pin) => [pin.sessionId, pin.pinnedAt]));
 				const page = await options.history.listSessions({ cursor, limit: parseLimit(url, 40, 100), project, query });
 				const historyItems = page.items.map((item) => summary(item, options.hub));
 				const historyIds = new Set(historyItems.map((item) => item.id));
 				// Page 1 also carries live sessions that have no JSONL yet, filtered and ordered like history.
-				const items = cursor
+				const listed = cursor
 					? historyItems
 					: filterSessions(
 							[...historyItems, ...options.hub.activeSummaries().filter((item) => !historyIds.has(item.id))],
-							sessionFilter(project, query),
+							filter,
 							(item) => item.project.path,
 						);
-				return json({ items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) });
+				const next = page.nextCursor ? { nextCursor: page.nextCursor } : {};
+				if (filter.query) {
+					const items = listed.map((item) => {
+						const at = pinnedAt.get(item.id);
+						return at ? { ...item, pinnedAt: at } : item;
+					});
+					return json({ items, ...next });
+				}
+				// Without a search, pins lead page 1 and every page leaves them out where they would otherwise fall.
+				const pinned = cursor
+					? []
+					: (await pinnedSummaries(options, pins)).filter(
+							(item) => filter.project === undefined || item.project.path === filter.project,
+						);
+				return json({ items: [...pinned, ...listed.filter((item) => !pinnedAt.has(item.id))], ...next });
 			}
 			if (path === "/v1/sessions" && req.method === "POST") {
 				const request = CreateSessionSchema.parse(await body(req));
@@ -483,6 +528,25 @@ export function createHttpHandler(
 				const { enabled } = AdvisorSchema.parse(await body(req));
 				await options.hub.setAdvisor(parsePathParam(advisorMatch[1]!), enabled);
 				return json({ advisor: enabled } satisfies AdvisorResponse);
+			}
+			const pinMatch = path.match(/^\/v1\/sessions\/([^/]+)\/pin$/);
+			if (pinMatch && (req.method === "PUT" || req.method === "DELETE")) {
+				const requested = parsePathParam(pinMatch[1]!);
+				const sessionId = await listedSessionId(options, requested);
+				if (req.method === "DELETE") {
+					await options.pins.unpin(sessionId ? [requested, sessionId] : [requested]);
+					return new Response(null, { status: 204 });
+				}
+				if (!sessionId) throw new HttpError(404, "not_found", "Session not found");
+				const pins = options.pins.list();
+				// A pin whose session OMP no longer has must not hold one of the few slots.
+				if (pins.length >= MAX_PINNED_SESSIONS && !pins.some((pin) => pin.sessionId === sessionId)) {
+					const gone = await Promise.all(
+						pins.map(async (pin) => ((await listedSessionId(options, pin.sessionId)) ? null : pin.sessionId)),
+					);
+					await options.pins.unpin(gone.filter((id) => id !== null));
+				}
+				return json({ pinnedAt: (await options.pins.pin(sessionId)).pinnedAt } satisfies PinResponse);
 			}
 			const respondMatch = path.match(/^\/v1\/sessions\/([^/]+)\/interactions\/([^/]+)\/respond$/);
 			if (respondMatch && req.method === "POST")
@@ -562,6 +626,9 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			data.unsubscribeJobs = options.jobs.onChange(() =>
 				ws.send(JSON.stringify({ type: "jobs.changed" } satisfies ServerMessage)),
 			);
+			data.unsubscribePins = options.pins.onChange(() =>
+				ws.send(JSON.stringify({ type: "sessions.changed" } satisfies ServerMessage)),
+			);
 			ws.send(JSON.stringify({ type: "hello", epoch, info: serverInfo(options) } satisfies ServerMessage));
 		},
 		message(ws: Bun.ServerWebSocket<SocketData>, raw: string | Buffer) {
@@ -611,6 +678,7 @@ export async function startHttp(options: HttpOptions): Promise<HttpService> {
 			for (const unsubscribe of data.unsubscribers.values()) unsubscribe();
 			data.unsubscribeBroadcast?.();
 			data.unsubscribeJobs?.();
+			data.unsubscribePins?.();
 		},
 	};
 	const createServer = (hostname: string, surface: "app" | "loopback") => {
