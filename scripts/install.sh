@@ -51,7 +51,7 @@ fi
 
 RELAY_PORT=8788
 if [ -f "$CONFIG" ]; then
-  RELAY_PORT=$("$BUN" -e 'const c=await Bun.file(process.argv[1]).json(); console.log(c.relayPort ?? 8788)' "$CONFIG")
+  RELAY_PORT=$("$BUN" -e 'const c=await Bun.file(process.argv[1]).json(); process.stdout.write(String(c.relayPort ?? 8788))' "$CONFIG")
 fi
 
 if [ ! -e "$EXT_LINK" ] && [ ! -L "$EXT_LINK" ]; then
