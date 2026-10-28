@@ -9,7 +9,7 @@
       "ios": { "simulator": true }
     },
     "preview": { "extends": "base", "distribution": "internal" },
-    "production": { "extends": "base", "autoIncrement": true }
+    "production": { "extends": "base", "autoIncrement": true, "channel": "production" }
   },
   "submit": { "production": {} }
 }
