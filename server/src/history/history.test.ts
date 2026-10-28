@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { appendFile, mkdtemp, mkdir, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, readFile, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { TimelineItem } from "@omp-mobile/protocol";
@@ -689,5 +689,26 @@ describe("sessions OMP moved to a new file", () => {
 		expect(await history.getSession("moved")).toEqual(expect.objectContaining({ id: "first", file: first }));
 		await rm(first);
 		expect(await history.getSession("first")).toEqual(expect.objectContaining({ id: "first", file: copy }));
+	});
+
+	test("reports the agent a session started as, also from the file OMP moved it to", async () => {
+		const { history, first, copy } = await moved();
+		expect((await history.listSessions({ limit: 10 })).items[0]).not.toHaveProperty("agent");
+		// A prompt long enough that the entry runs past the start of the file the catalog reads.
+		const entry = {
+			type: "custom",
+			customType: "omp-mobile-agent",
+			data: { name: "reviewer", tools: ["read"], prompt: "Review only. ".repeat(1_000) },
+			id: "g1",
+			parentId: null,
+			timestamp: at(0),
+		};
+		for (const file of [first, copy]) {
+			const [header, ...rest] = (await readFile(file, "utf8")).split("\n");
+			await writeFile(file, [header, JSON.stringify(entry), ...rest].join("\n"));
+		}
+		expect((await history.listSessions({ limit: 10 })).items).toEqual([
+			expect.objectContaining({ id: "first", file: copy, agent: "reviewer" }),
+		]);
 	});
 });
