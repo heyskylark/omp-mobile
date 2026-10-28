@@ -6,6 +6,8 @@ import { ErrorState, Icon, PrimaryButton, Surface } from "../../../components/ui
 import { useToast } from "../../../components/toast";
 import { OmpApi } from "../../../data/api";
 import { useMachine, useMachines } from "../../../data/machines";
+import { OmpNative } from "../../../../modules/omp-native";
+import type { NotificationServiceResult } from "../../../native/types";
 
 export default function MachineSettingsScreen() {
 	const { machineId } = useLocalSearchParams<{ machineId: string }>();
@@ -24,6 +26,12 @@ export default function MachineSettingsScreen() {
 			.then((info) => (savedSinceMount.current ? undefined : applyInfo(current.machineId, info)))
 			.catch(() => {});
 	}, [machineId, applyInfo]);
+	const [lastNotification, setLastNotification] = useState<NotificationServiceResult | null>();
+	useEffect(() => {
+		OmpNative.lastNotificationResult()
+			.then(setLastNotification)
+			.catch(() => setLastNotification(null));
+	}, []);
 	if (!machine) return <ErrorState message="This computer is no longer paired." />;
 
 	const value = draft ?? machine.name;
@@ -105,9 +113,31 @@ export default function MachineSettingsScreen() {
 			<Text className="mt-2 px-1 text-caption text-secondary">
 				Changes the name on the computer, so every paired phone and the Mac menu bar show it.
 			</Text>
+			{lastNotification !== undefined ? (
+				<>
+					<Text className="mb-2 mt-6 px-1 text-caption font-medium text-secondary">LAST NOTIFICATION</Text>
+					<Text selectable className="px-1 text-caption text-secondary">
+						{describeNotification(lastNotification, machine.machineId)}
+					</Text>
+				</>
+			) : null}
 			<View className="mt-auto pb-8">
 				<PrimaryButton label="Remove computer" danger icon="trash" onPress={confirmRemove} />
 			</View>
 		</View>
 	);
+}
+
+function describeNotification(result: NotificationServiceResult | null, machineId: string): string {
+	if (!result) return "This phone has not received a notification yet.";
+	const at = new Date(result.at).toLocaleString(undefined, {
+		month: "short",
+		day: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+	});
+	const outcome = result.ok ? `Decrypted ${at}.` : `Not decrypted ${at}. ${result.step}: ${result.detail}`;
+	return result.machineId && result.machineId !== machineId
+		? `${outcome}\nThe notification came from computer ${result.machineId}; this computer is ${machineId}.`
+		: outcome;
 }

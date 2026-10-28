@@ -39,11 +39,14 @@ enum MachineVaultError: LocalizedError {
 final class MachineVault: @unchecked Sendable {
   static let shared = MachineVault()
   static let service = "omp-mobile.machine"
+  /// The notification service extension reads the push key while the phone is locked.
+  static let accessibility = kSecAttrAccessibleAfterFirstUnlock
 
   private let encoder = JSONEncoder()
   private let decoder = JSONDecoder()
   private let lock = NSLock()
   private var didLogFallback = false
+  private var didMigrateAccessibility = false
 
   private var configuredAccessGroup: String? {
     Bundle.main.object(forInfoDictionaryKey: "OmpKeychainAccessGroup") as? String
@@ -51,6 +54,7 @@ final class MachineVault: @unchecked Sendable {
 
   func list() throws -> [MachineRecord] {
     try lock.withLock {
+      migrateAccessibilityIfNeeded()
       let result = try copyAll(useAccessGroup: true)
       return try result.map { try decoder.decode(MachineRecord.self, from: $0) }
         .sorted { $0.pairedAt > $1.pairedAt }
@@ -59,6 +63,7 @@ final class MachineVault: @unchecked Sendable {
 
   func get(machineId: String) throws -> MachineRecord? {
     try lock.withLock {
+      migrateAccessibilityIfNeeded()
       guard let data = try copyOne(machineId: machineId, useAccessGroup: true) else { return nil }
       return try decoder.decode(MachineRecord.self, from: data)
     }
@@ -147,10 +152,30 @@ final class MachineVault: @unchecked Sendable {
 
   private func upsert(machineId: String, data: Data, useAccessGroup: Bool) -> OSStatus {
     var query = baseQuery(machineId: machineId, useAccessGroup: useAccessGroup)
-    let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+    let attributes: [String: Any] = [
+      kSecValueData as String: data,
+      kSecAttrAccessible as String: Self.accessibility
+    ]
+    let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     guard status == errSecItemNotFound else { return status }
-    query[kSecValueData as String] = data
+    query.merge(attributes) { _, new in new }
     return SecItemAdd(query as CFDictionary, nil)
+  }
+
+  /// Records saved by earlier builds have the default `kSecAttrAccessibleWhenUnlocked`, which the extension cannot read while the phone is locked.
+  private func migrateAccessibilityIfNeeded() {
+    guard !didMigrateAccessibility else { return }
+    let attributes = [kSecAttrAccessible as String: Self.accessibility] as CFDictionary
+    var statuses = [SecItemUpdate(baseQuery(machineId: nil, useAccessGroup: true) as CFDictionary, attributes)]
+    if configuredAccessGroup != nil {
+      statuses.append(SecItemUpdate(baseQuery(machineId: nil, useAccessGroup: false) as CFDictionary, attributes))
+    }
+    let failures = statuses.filter { $0 != errSecSuccess && $0 != errSecItemNotFound && !shouldFallback($0) }
+    guard failures.isEmpty else {
+      NSLog("OMP Mobile: keychain accessibility migration failed with OSStatus %@; retrying next time", "\(failures)")
+      return
+    }
+    didMigrateAccessibility = true
   }
 
 
