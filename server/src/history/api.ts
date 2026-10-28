@@ -40,9 +40,14 @@ export interface History {
 	readonly images: ImageStore;
 	/**
 	 * Sessions filtered to an exact `project` cwd and a fuzzy title `query` (trimmed; empty means none),
-	 * then paged. A cursor is only valid for the filter it was issued with.
+	 * then paged. A cursor is only valid for the filter it was issued with. A session OMP moved to new files is listed
+	 * once, under its first id.
 	 */
 	listSessions(opts: { cursor?: string; limit: number; project?: string; query?: string }): Promise<SessionMetaPage>;
+	/**
+	 * Any id a session had finds it. A moved session comes back under its first id with the file OMP now writes, and
+	 * every read below by such an id reads that file.
+	 */
 	getSession(id: string): Promise<SessionMeta | null>;
 	/** Newest page when `before` is absent; items ascending within the page. */
 	readTimeline(id: string, opts: { before?: string; limit: number }): Promise<TimelinePage>;
@@ -54,6 +59,7 @@ export interface History {
 	readAdvisor(id: string): Promise<boolean>;
 	/** Null unless `file` is a task agent's transcript, per OMP's layout. */
 	locateAgent(file: string): Promise<AgentLocation | null>;
+	/** Like `getSession`, for any file the session was stored in. */
 	getSessionByFile(file: string): Promise<SessionMeta | null>;
 	/** Task agents of the session stored at `rootFile`, nested ones included, oldest first. */
 	listAgents(rootFile: string): Promise<AgentFile[]>;

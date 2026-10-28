@@ -246,6 +246,33 @@ function post(event: Event, context: ExtensionContext): Promise<void> {
 	});
 }
 
+/** How often a terminal session checks whether a new server started. */
+const SERVER_WATCH_MS = 5_000;
+let serverWatch: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * The server learns that a terminal runs a session only from its `session_start`, and forgets it when it restarts.
+ * A terminal session announces itself again to each new server (a new `extensionToken` in `server.json`), so the
+ * server routes the phone to it instead of resuming the session in a second OMP process, which would make OMP move
+ * the session to a new file.
+ */
+function followServer(context: ExtensionContext): void {
+	clearInterval(serverWatch);
+	let token: string | undefined;
+	const known = readServer().then((server) => {
+		token = server?.extensionToken;
+	});
+	const watch = setInterval(async () => {
+		await known;
+		const current = (await readServer())?.extensionToken;
+		if (watch !== serverWatch || current === token) return;
+		token = current;
+		if (current) await post({ type: "session_start" }, context);
+	}, SERVER_WATCH_MS);
+	watch.unref();
+	serverWatch = watch;
+}
+
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 async function scheduleJob(params: Record<string, string>, context: ExtensionContext): Promise<ToolResult> {
@@ -351,8 +378,15 @@ export default function ompMobileExtension(api: ExtensionApi): void {
 		if (payload && typeof payload === "object")
 			reportAgent(agentSignal(Reflect.get(payload, "progress"), Reflect.get(payload, "sessionFile")), false);
 	});
-	api.on("session_start", forward([]));
-	api.on("session_shutdown", (event, context) => post({ type: event.type }, context));
+	api.on("session_start", (event, context) => {
+		forward([])(event, context);
+		if (context.mode === "tui") followServer(context);
+	});
+	api.on("session_shutdown", (event, context) => {
+		clearInterval(serverWatch);
+		serverWatch = undefined;
+		return post({ type: event.type }, context);
+	});
 	api.on("agent_start", forward([]));
 	api.on("agent_end", forward(["willContinue"]));
 	api.on("tool_execution_start", forward(["toolCallId", "toolName", "args"]));

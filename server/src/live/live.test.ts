@@ -17,6 +17,7 @@ import type { History, SessionMeta } from "../history/api.ts";
 import { ImageStore } from "../history/images.ts";
 import type { ServerMessage, TimelineItem } from "@omp-mobile/protocol";
 import { createLiveHub } from "./index.ts";
+import { sessionHolder } from "./lease.ts";
 
 describe("ownership reducer", () => {
 	test("server lifecycle and conflict fail closed", () => {
@@ -55,6 +56,12 @@ describe("ownership reducer", () => {
 		const gone = reduceOwnership(terminal, { type: "terminal.pidGone", pid: 9 });
 		expect(gone.kind).toBe("terminal");
 		expect(reduceOwnership(gone, { type: "terminal.shutdown", pid: 9 })).toEqual({ kind: "idle" });
+	});
+
+	test("a lease holder found without session_start frees the session when it exits", () => {
+		const found = reduceOwnership({ kind: "idle" }, { type: "terminal.started", pid: 9 });
+		expect(reduceOwnership(found, { type: "terminal.released", pid: 8 })).toBe(found);
+		expect(reduceOwnership(found, { type: "terminal.released", pid: 9 })).toEqual({ kind: "idle" });
 	});
 });
 
@@ -436,6 +443,121 @@ for await (const line of console) {
 			await rm(dir, { recursive: true, force: true });
 		}
 	});
+
+	test("leaves a session another omp process holds to that process, then resumes it once the process exits", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		await writeFile(ompPath, fakeOmp, { mode: 0o755 });
+		const file = join(dir, "held.jsonl");
+		await writeFile(file, `${JSON.stringify({ type: "session", version: 3, id: "held", cwd: dir })}\n`);
+		// OMP keeps the session's lease open while it has the session; nothing told the server, as after a restart.
+		const owners = join(dir, "owners");
+		await mkdir(owners);
+		await writeFile(join(owners, "held.lock"), "");
+		const ownersBefore = process.env.PI_TEST_SESSION_OWNERS_DIR;
+		process.env.PI_TEST_SESSION_OWNERS_DIR = owners;
+		const holder = Bun.spawn(["/bin/sh", "-c", 'exec 3<"$0"; exec sleep 30', join(owners, "held.lock")]);
+		const session = {
+			id: "held",
+			file,
+			cwd: dir,
+			title: "Held",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+			status: "complete" as const,
+		};
+		const hub = createLiveHub({
+			history: stubHistory([session]),
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs: 60_000,
+		});
+		try {
+			await until(async () => (await sessionHolder(file)) === holder.pid, "the holder to open the lease");
+			hub.subscribe("held", () => {});
+			await until(() => hub.overlay("held").liveness.kind === "terminal", "the holder to own the session");
+			await expect(hub.prompt("held", { operationId: "op-1", text: "hello" })).rejects.toThrow(
+				`This session is open in another OMP process (pid ${holder.pid})`,
+			);
+			holder.kill();
+			await until(() => hub.overlay("held").liveness.kind === "idle", "the session to be free");
+			expect(await hub.prompt("held", { operationId: "op-2", text: "hello" })).toEqual({ state: "accepted" });
+			expect(hub.overlay("held").liveness.kind).toBe("server");
+		} finally {
+			holder.kill();
+			if (ownersBefore === undefined) delete process.env.PI_TEST_SESSION_OWNERS_DIR;
+			else process.env.PI_TEST_SESSION_OWNERS_DIR = ownersBefore;
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	test("follows OMP to the file it moves the session to", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		// After its first prompt the fake reports what OMP 18.13 does when it cannot write the session in place.
+		const moving = [
+			'require("node:fs").appendFileSync("argv.log", process.argv.slice(2).join(" ") + "\\n");',
+			"let moved = false;",
+			"for await (const line of console) {",
+			"\tif (!line.trim()) continue;",
+			"\tconst command = JSON.parse(line);",
+			'\tif (command.type === "prompt" && !moved) {',
+			"\t\tmoved = true;",
+			'\t\tout({ type: "notice", level: "warning", source: "session-persistence", message: "Session moved" });',
+			"\t}",
+			'\tif (command.type === "get_state")',
+			'\t\tout({ type: "response", id: command.id, success: true, data: moved ? { sessionId: "moved", sessionFile: process.cwd() + "/moved.jsonl" } : { sessionId: "fake", sessionFile: process.cwd() + "/fake.jsonl" } });',
+		].join("\n");
+		const loopStart = fakeOmp.indexOf("for await");
+		const loopBody = fakeOmp.indexOf("\telse out(");
+		await writeFile(ompPath, fakeOmp.slice(0, loopStart) + moving + "\n" + fakeOmp.slice(loopBody), {
+			mode: 0o755,
+		});
+		const meta = (id: string) => ({
+			id,
+			file: join(dir, "moved.jsonl"),
+			cwd: dir,
+			title: "Moved",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			updatedAt: "2026-01-01T00:00:00.000Z",
+			status: "complete" as const,
+		});
+		const hub = createLiveHub({
+			history: {
+				...stubHistory(),
+				// History finds a moved session under its first id, whichever id it is asked for.
+				async getSession(id) {
+					return id === "moved" ? meta("fake") : null;
+				},
+			},
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs: 60_000,
+		});
+		try {
+			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
+			await until(() => {
+				const liveness = hub.overlay(sessionId).liveness;
+				return liveness.kind === "server" && liveness.phase === "ready";
+			}, "the first turn to settle");
+			// The extension in the moved process reports under the new id; it is the same session.
+			hub.ingest({ event: "session_title", sessionId: "moved", title: "Renamed", pid: process.pid, mode: "rpc" });
+			await until(async () => (await hub.snapshot(sessionId, 40))?.session.title === "Renamed", "the title");
+			expect(hub.overlay("moved").liveness).toEqual({ kind: "server", phase: "ready" });
+			await hub.handoff(sessionId);
+			await hub.prompt(sessionId, { operationId: "op-2", text: "second" });
+			await until(async () => (await Bun.file(join(dir, "argv.log")).text()).split("\n").length === 3, "OMP to resume");
+			expect((await Bun.file(join(dir, "argv.log")).text()).split("\n")[1]).toContain(
+				`--resume ${join(dir, "moved.jsonl")}`,
+			);
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
 });
 
 describe("session_title from the extension", () => {
@@ -515,6 +637,22 @@ describe("UI request mapping", () => {
 			title: "Allow tool: bash",
 			detail: "Command: echo picked-blue",
 		});
+		// OMP 18.13 adds a session-scoped approval between Approve and Deny.
+		const sessionApproval = normalizeRpcUiRequest({
+			type: "extension_ui_request",
+			id: "15b85ea05cd2c356",
+			method: "select",
+			title: "Allow tool: bash\nCommand: echo hi-capture",
+			options: ["Approve", "Approve bash for this session", "Deny"],
+		})!;
+		expect(requestToPending("s", sessionApproval, "2026-01-01T00:00:00.000Z")).toEqual({
+			id: sessionApproval.id,
+			sessionId: "s",
+			createdAt: "2026-01-01T00:00:00.000Z",
+			kind: "approval",
+			title: "Allow tool: bash",
+			detail: "Command: echo hi-capture",
+		});
 		const ask = normalizeRpcUiRequest({
 			type: "extension_ui_request",
 			id: "1592ec601d0a5bcb",
@@ -573,6 +711,14 @@ describe("responses and receipts", () => {
 				kind: "approve",
 			}),
 		).toEqual({ kind: "send", value: "Approve" });
+		const sessionApproval = record({
+			id: "a",
+			method: "select",
+			title: "Allow tool: bash\nCommand: echo hi-capture",
+			options: ["Approve", "Approve bash for this session", "Deny"],
+		});
+		expect(planResponse(sessionApproval, { kind: "approve" })).toEqual({ kind: "send", value: "Approve" });
+		expect(planResponse(sessionApproval, { kind: "deny" })).toEqual({ kind: "send", value: "Deny" });
 		expect(
 			planResponse(record({ id: "q", method: "select", title: "Color", options: ["Red", "Other (type your own)"] }), {
 				kind: "choice",

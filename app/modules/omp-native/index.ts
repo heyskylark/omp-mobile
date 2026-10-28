@@ -3,6 +3,7 @@ import type {
 	ActionResult,
 	MachineSecretInput,
 	NotificationOpen,
+	NotificationServiceResult,
 	OmpNativeModule as OmpNativeContract,
 	PairedMachine,
 	PastedImage,
@@ -22,6 +23,7 @@ declare class NativeOmpModule extends NativeModule<OmpNativeEvents> {
 	removeMachine(machineId: string): Promise<void>;
 	registerForPush(): Promise<{ token: string; environment: PushEnvironment } | null>;
 	consumeLaunchNotification(): Promise<NotificationOpen | null>;
+	lastNotificationResult(): Promise<NotificationServiceResult | null>;
 }
 
 const nativeModule = requireNativeModule<NativeOmpModule>("OmpNative");
@@ -33,6 +35,7 @@ export const OmpNative: OmpNativeContract = {
 	removeMachine: (machineId) => nativeModule.removeMachine(machineId),
 	registerForPush: () => nativeModule.registerForPush(),
 	consumeLaunchNotification: () => nativeModule.consumeLaunchNotification(),
+	lastNotificationResult: () => nativeModule.lastNotificationResult(),
 	addNotificationOpenListener: (listener) => nativeModule.addListener("onNotificationOpen", listener),
 	addActionResultListener: (listener) => nativeModule.addListener("onActionResult", listener),
 	addPasteImagesListener: (listener) => nativeModule.addListener("onPasteImages", listener),

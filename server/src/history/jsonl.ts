@@ -16,6 +16,8 @@ export interface SessionHeader {
 	cwd: string;
 	timestamp?: string;
 	title?: string;
+	/** Id of the session OMP moved out of its file into this one (see `resolveMoves` in `catalog.ts`). */
+	continuationOf?: string;
 }
 
 export function parseLine(line: string): Record<string, unknown> | undefined {
@@ -46,6 +48,7 @@ export function parseHeader(prefix: string): { header: SessionHeader; slotTitle?
 				cwd: value.cwd,
 				timestamp: typeof value.timestamp === "string" ? value.timestamp : undefined,
 				title: typeof value.title === "string" ? value.title : undefined,
+				continuationOf: typeof value.continuationOf === "string" ? value.continuationOf : undefined,
 			},
 			slotTitle,
 		};

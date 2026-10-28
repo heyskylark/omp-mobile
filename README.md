@@ -62,9 +62,11 @@ The server tracks each session in one of three states:
 
 | State | Viewing | Acting (prompt, answer, approve) |
 |---|---|---|
-| Idle, only the session file exists | The server reads the file. No OMP process starts. | The server starts `omp --mode rpc-ui --resume <file>` in the session's folder. |
+| Idle, only the session file exists | The server reads the file. No OMP process starts. | The server starts `omp --mode rpc-ui --resume <file>` in the session's folder, unless another OMP process has the session open. |
 | Running on the server | File history plus live RPC events | Through RPC |
-| Running in your terminal | File history plus live Collab events | Through Collab as a writable guest |
+| Running in your terminal, or in another OMP process | File history plus live Collab events | Through Collab as a writable guest |
+
+The server learns that a terminal runs a session from the extension's `session_start` event, and a terminal announces its session again when the server restarts. OMP 18.13 and later also keep a lease, `~/.omp/run/session-owners/<session id>.lock`, open while a process has a session open for writing, and OMP moves a session to a new file when a second process writes to it (see [Known limitations](#known-limitations)). So when a phone opens an idle session, and again before the server resumes one, the server asks `lsof` which process holds the lease. It treats that process like a terminal until the process exits, even when the server never saw its `session_start`, for example a terminal started before the server restarted.
 
 When you close a terminal session, its Collab room closes. After the server sees both the extension's `session_shutdown` event and the process exit, the session becomes idle, and your next action resumes it under the server. The server closes its own OMP process once a turn settles and no phone is watching, so a session is never written by two processes at once.
 
@@ -72,7 +74,7 @@ Task agents run inside their session's OMP process, and OMP writes each one's tr
 
 ## Requirements
 
-- macOS with [Bun](https://bun.sh) 1.3.14 or later, Node.js for Expo prebuilds, and OMP on your `PATH`. OMP 18.4.3 and 18.4.4 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
+- macOS with [Bun](https://bun.sh) 1.3.14 or later, Node.js for Expo prebuilds, and OMP on your `PATH`. OMP 18.4.3, 18.4.4, and 18.13.3 are tested. The server speaks OMP's Collab protocol version 3, so run `bun run e2e` after you upgrade OMP.
 - Tailscale running on the computer and on the iPhone, signed in to the same tailnet with MagicDNS on.
 - For the iPhone app: iOS 16 or later on the phone, and Xcode 26.2 or later, which needs macOS Sequoia 15.6 or later. Xcode 27 builds work too. TestFlight also needs an Apple Developer Program membership and an [Expo](https://expo.dev) account for EAS builds. A free Apple Account can [install the app directly](#install-with-a-free-apple-account) for 7 days at a time.
 
@@ -133,6 +135,8 @@ Restart the server after you change the file: choose **Restart server** in the m
 A pairing code works once and expires after 10 minutes. After a phone uses it, the Mac confirms which device connected; choose **New code** to connect another device. You can also copy the pairing link on the Mac and paste it into the app. Pairing the same app install again replaces its previous registration on that computer. Remove a phone from the menu bar under **Paired devices**.
 
 To rename a computer, open it in the app, tap the **…** button, edit **Name**, and tap **Save**. The server saves the name to `machineName` in `~/.omp-mobile/config.json` and uses it right away. Other paired phones pick it up the next time they load the Computers list.
+
+The app recognizes a computer by its machine id, which the server creates on first start and stores in `~/.omp-mobile/machine.json` (mode 0600). Changing the computer's host name, for example when a network's DHCP assigns a different one, does not change the id. Servers that paired phones before `machine.json` existed keep the id those phones already know, derived from the Mac's own host name. If you delete `machine.json`, the server starts as a new computer: pair your phones again and remove the old entry from the app.
 
 ## Let agents use your Chrome
 
@@ -196,7 +200,7 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    scripts/testflight.sh
    ```
 
-   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist.
+   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist. Unattended submits also need the App Store Connect app ID, which `app/eas.json` sets to `6828119691` under `submit.production.ios.ascAppId`; replace it with your app's ID (the number in its App Store Connect URL) if you build under your own bundle identifier.
 
 5. When the build finishes processing in App Store Connect, open **TestFlight**, add yourself as an internal tester, and install **OMP** from the TestFlight app on your iPhone.
 
@@ -244,7 +248,7 @@ Push notifications go from each computer straight to Apple. Each computer needs 
 
 4. Restart the server. The menu bar stops showing **Push notifications are not configured**. This state is reported by `apnsConfigured` in the admin status response rather than duplicated in its general `problems` list.
 
-The phone registers for notifications when you pair it. Release builds, including TestFlight, register for the production APNs environment and Debug builds for the sandbox. The server sends each phone's notifications to the environment it registered. Each notification's text is encrypted with a key shared only by that phone and the computer, so Apple sees a generic "New activity" placeholder, and the app's notification service extension decrypts the real text on the phone.
+The phone registers for notifications when you pair it. Release builds, including TestFlight, register for the production APNs environment and Debug builds for the sandbox. The server sends each phone's notifications to the environment it registered. Each notification's text is encrypted with a key shared only by that phone and the computer, so Apple sees a generic "New activity" placeholder, and the app's notification service extension decrypts the real text on the phone. The key is stored in the keychain so that the extension can read it while the phone is locked, any time after the first unlock since the phone started. If a notification still shows "New activity", open the computer's settings in the app: **Last notification** shows whether the extension decrypted the latest notification and, if not, which step failed.
 
 ## Install with a free Apple account
 
@@ -329,8 +333,11 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - The app targets Expo SDK 55 because SDK 56 and later need Xcode 26.4. After you update Xcode, upgrade with `bunx expo install expo@latest --fix` in `app/`.
 - The minimum iOS version is 16.0 instead of SDK 55's default of 15.1. With the iOS 27 SDK, `expo-router` 55 uses APIs that require iOS 16, and `app/plugins/with-pod-deployment-target.js` raises every pod target to the app's deployment target because Xcode 27 rejects the iOS 12.4 and 9.0 targets that some pod resource bundles declare.
 - iOS 27 stops apps that do not use the UIKit scene life cycle at launch, and the SDK 55 template still creates its window in the app delegate. `app/plugins/with-scene-lifecycle.js` adds a scene manifest to Info.plist and a `SceneDelegate` that hosts React Native and forwards URLs and life-cycle events to the app delegate. Expo SDK 58 generates this setup itself, so remove the plugin when upgrading.
-- Push delivery through APNs and decryption in the notification service extension have not been tested on a physical device. The Simulator shows the notification actions and runs the Approve action end to end, but it did not run the extension for `simctl push`.
-- A session opened in a terminal after the server started working on it is not blocked by OMP. The server marks it as a conflict, stops accepting phone input for it, and closes its own process when the turn settles.
+- Decryption in the notification service extension has not been confirmed on a physical device, and the Simulator does not run the extension for `simctl push`. The Simulator shows the notification actions and runs the Approve action end to end. Earlier builds stored the push key so that the extension could read it only while the phone was unlocked. The app moves stored keys to the new setting the first time it opens after the update, without pairing again.
+- A session opened in a terminal after the server started working on it is not blocked by OMP. The server marks it as a conflict, stops accepting phone input for it, and closes its own process when the turn settles. With OMP 18.13 and later, the terminal writes to a new file instead, as described next.
+- OMP 18.13 and later never let two processes write one session file. A process that cannot keep writing a session in place moves it to a new file with a new id, copies its entries there, and records the old id as `continuationOf` in the new file's header. OMP does this when another omp process has the session open (`open-elsewhere`), when the file changed on disk (`replaced`), and when another program keeps writing to it (`contested`). The server treats each chain of such files as one session: it lists the session once under its first id, so the phone keeps showing and matching its messages, and reads the copy with the newest turn, as `omp --resume` does. When the server's own OMP process moves the session, OMP's `session-persistence` notice tells the server the new file. If both a terminal and the server kept writing after a move, the phone shows only the copy with the newest turn.
+- OMP takes a session's lease on the session's first write, so a terminal that has only resumed a session holds none yet. If such a terminal runs an extension older than this version, it does not announce itself again after the server restarts, so a phone prompt starts the server's own OMP process, and the terminal moves to a new file when it next writes.
+- The phone drives a session held by another OMP process only through that process's Collab room. A process without one, such as `omp -p` or a terminal whose `collab.relayUrl` does not point at the server's relay, takes no phone input until it exits.
 - In a session the server runs, an `ask` call with several questions cannot finish a multiple-choice question from the phone. OMP's RPC mode offers no **Done** option there and expects the terminal's → key to move on, which RPC cannot send. Tapping options only toggles them; answer with **Other…** to continue. Sessions driven through Collab offer **Next →** and are not affected.
 - OMP does not forward images with a `/skill:` prompt, so images attached to one are dropped. Send them in a separate message.
 - OMP reports a task agent's description and current activity only while the agent runs, and the server keeps them in memory. After the server restarts, finished agents show no description, and an agent that is still running shows as **Interrupted** until OMP reports its progress again, within a few seconds.
