@@ -67,7 +67,7 @@ Preconditions: Launch + Doctor passed. Every pairing flow answers the notificati
   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/name-refresh -e 'NEW_NAME=<other name>' .omp/skills/verify-omp-mobile/flows/computer-name-refresh.yaml
   ```
 
-- **Remove computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/remove -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/remove-computer.yaml`. The computer's `status` must lose that `iPhone` device. Run it last, or on a second run's server: every run on this Mac is the same computer to the app (SKILL.md Scope).
+- **Remove computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/remove -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/remove-computer.yaml`. The computer's `status` must lose that `iPhone` device. Run it last, or on a second run's server, which is a separate computer to the app (SKILL.md Scope).
 - **Second observation:** after every step, `api.ts <RUN_ID> status > <EVIDENCE>/<step>-status.json`. Check `devices` (name, `pairedAt`, `lastSeenAt`) and `pairings[].consumedBy`, which names the device that used each code.
 
 ## Gotchas
