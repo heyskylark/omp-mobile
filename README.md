@@ -200,7 +200,7 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
    scripts/testflight.sh
    ```
 
-   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist.
+   The first run asks you to sign in to your Apple account so EAS can create the app record, certificates, and profiles. When it offers to set up a push key, decline: each computer signs its own notifications with the key from [Turn on push notifications](#turn-on-push-notifications). The script unsets `CI`, because EAS cannot create credentials without prompts; pass `--non-interactive` to build unattended once credentials exist. Unattended submits also need the App Store Connect app ID, which `app/eas.json` sets to `6828119691` under `submit.production.ios.ascAppId`; replace it with your app's ID (the number in its App Store Connect URL) if you build under your own bundle identifier.
 
 5. When the build finishes processing in App Store Connect, open **TestFlight**, add yourself as an internal tester, and install **OMP** from the TestFlight app on your iPhone.
 
