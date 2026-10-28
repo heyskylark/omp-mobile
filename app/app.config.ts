@@ -27,6 +27,8 @@ const config: ExpoConfig = {
 		},
 		infoPlist: {
 			NSCameraUsageDescription: "Scan an OMP computer pairing code.",
+			// Only standard encryption built into iOS (HTTPS, CryptoKit AES-GCM for notification text), which is exempt.
+			ITSAppUsesNonExemptEncryption: false,
 			NSAppTransportSecurity: {
 				NSAllowsLocalNetworking: true,
 				NSExceptionDomains: {
