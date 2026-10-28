@@ -26,6 +26,8 @@ export type OwnershipEvent =
 	| { type: "terminal.detached" }
 	| { type: "terminal.shutdown"; pid: number }
 	| { type: "terminal.pidGone"; pid: number }
+	/** A process found holding the session's OMP lease (no extension `session_start` seen) exited. */
+	| { type: "terminal.released"; pid: number }
 	| { type: "unavailable"; reason: string };
 
 export function reduceOwnership(state: OwnershipState, event: OwnershipEvent): OwnershipState {
@@ -76,6 +78,10 @@ export function reduceOwnership(state: OwnershipState, event: OwnershipEvent): O
 			if (state.kind === "conflict" && state.terminalPid === event.pid) return { ...state, pidGone: true };
 			if (state.kind !== "terminal" || state.pid !== event.pid) return state;
 			return state.shutdownSeen ? { kind: "idle" } : { ...state, attached: false, pidGone: true };
+		case "terminal.released":
+			if (state.kind === "conflict" && state.terminalPid === event.pid)
+				return { ...state, shutdownSeen: true, pidGone: true };
+			return state.kind === "terminal" && state.pid === event.pid ? { kind: "idle" } : state;
 		case "unavailable":
 			return { kind: "unavailable", reason: event.reason };
 	}

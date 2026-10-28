@@ -93,8 +93,8 @@ export function createHistory(options: HistoryOptions): History {
 			return session ? pager.advisor(session.file) : false;
 		},
 		locateAgent,
-		async getSessionByFile(file) {
-			return (await catalog.all()).find((meta) => meta.file === file) ?? null;
+		getSessionByFile(file) {
+			return catalog.findByFile(file);
 		},
 		listAgents(rootFile) {
 			return agents.list(rootFile);

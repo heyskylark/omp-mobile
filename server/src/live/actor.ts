@@ -26,6 +26,7 @@ import {
 	type InteractionRecord,
 	type UiRequest,
 } from "./interactions.ts";
+import { sessionHolder } from "./lease.ts";
 import { RpcSupervisor } from "./rpc.ts";
 import { publicLiveness, reduceOwnership, type OwnershipEvent, type OwnershipState } from "./state.ts";
 
@@ -174,6 +175,7 @@ export class SessionActor {
 	#rpcBusy = false;
 	#reconcileRequest?: { retireThrough?: number };
 	#reconciling?: Promise<void>;
+	#findingHolder?: Promise<void>;
 	/** Role and advisor applied through this actor's rpc child; history is authoritative once the child is gone. */
 	#modelRole?: ModelRole;
 	#advisor?: boolean;
@@ -241,7 +243,11 @@ export class SessionActor {
 			clearTimeout(this.#closeTimer);
 			this.#closeTimer = undefined;
 		}
-		if (this.state.kind === "terminal" && !this.state.attached) void this.#ensureCollab();
+		void this.#findHolder()
+			.then(() => {
+				if (this.state.kind === "terminal" && !this.state.attached) return this.#ensureCollab();
+			})
+			.catch((error) => console.error(`Could not tell who holds session ${this.sessionId}`, error));
 		return () => {
 			this.#subscribers.delete(send);
 			this.#scheduleClose();
@@ -254,10 +260,10 @@ export class SessionActor {
 		this.#assertWritable();
 		this.#promptOperations.add(operationId);
 		try {
-			if (this.state.kind === "terminal") {
-				await this.#ensureCollab();
-				await this.#collab!.send({ t: "prompt", text, ...ompImages(images) });
-			} else {
+			await this.#findHolder();
+			if (this.state.kind === "terminal")
+				await (await this.#requireCollab()).send({ t: "prompt", text, ...ompImages(images) });
+			else {
 				await this.#ensureRpc();
 				// A prompt that arrives mid-turn steers it; OMP rejects a bare prompt while streaming.
 				await this.#rpc!.command({
@@ -277,10 +283,8 @@ export class SessionActor {
 
 	async abort(): Promise<void> {
 		this.#assertWritable();
-		if (this.state.kind === "terminal") {
-			await this.#ensureCollab();
-			await this.#collab!.send({ t: "abort" });
-		} else if (this.#rpc) this.#rpc.send({ type: "abort" });
+		if (this.state.kind === "terminal") await (await this.#requireCollab()).send({ t: "abort" });
+		else if (this.#rpc) this.#rpc.send({ type: "abort" });
 	}
 
 	async setModelRole(role: ModelRole): Promise<void> {
@@ -330,7 +334,7 @@ export class SessionActor {
 		const plan = planResponse(record, request.response);
 		if (typeof plan === "string") return this.#remember(receipt(request.operationId, plan));
 		try {
-			if (record.source.transport === "collab") await this.#ensureCollab();
+			if (record.source.transport === "collab") await this.#requireCollab();
 			else await this.#ensureRpc();
 			if (plan.kind === "other") {
 				const editorPromise = this.#waitForEditor(record.pending.title);
@@ -391,6 +395,9 @@ export class SessionActor {
 	async #ensureRpc(): Promise<void> {
 		if (this.#rpc) return;
 		if (this.state.kind !== "idle") this.#assertWritable();
+		await this.#findHolder();
+		if (this.state.kind === "terminal")
+			throw new Error(`This session is open in another OMP process (pid ${this.state.pid}). Continue it there.`);
 		const cwdExists = await stat(this.meta.cwd).then(
 			(info) => info.isDirectory(),
 			() => false,
@@ -501,6 +508,35 @@ export class SessionActor {
 		}
 	}
 
+	/** The terminal's Collab room, joined if needed; fails when the process holding the session offers none. */
+	async #requireCollab(): Promise<CollabGuest> {
+		await this.#ensureCollab();
+		if (this.#collab) return this.#collab;
+		throw new Error(
+			`This session is open in another OMP process${this.state.kind === "terminal" ? ` (pid ${this.state.pid})` : ""}, and the computer cannot join its Collab room. Continue it there, or close it and try again.`,
+		);
+	}
+
+	/**
+	 * Takes the session's OMP lease holder for its owner when the server never saw it start, e.g. a terminal opened
+	 * before the server restarted. Starting OMP on the session then would move it to a new file (README, "Known
+	 * limitations"), so the holder owns it like a terminal until it exits. Concurrent calls share one lookup.
+	 */
+	#findHolder(): Promise<void> {
+		this.#findingHolder ??= (async () => {
+			if (this.state.kind !== "idle" || this.#rpc) return;
+			const current = await this.#opts.history.getSession(this.sessionId);
+			if (current) this.meta.file = current.file;
+			const pid = this.meta.file ? await sessionHolder(this.meta.file) : undefined;
+			if (!pid || this.state.kind !== "idle" || this.#rpc) return;
+			this.#transition({ type: "terminal.started", pid });
+			this.#checkPid(pid, "terminal.released");
+		})().finally(() => {
+			this.#findingHolder = undefined;
+		});
+		return this.#findingHolder;
+	}
+
 	#leaveCollab(): void {
 		this.#collab?.close();
 		this.#collab = undefined;
@@ -552,7 +588,25 @@ export class SessionActor {
 			this.#handoffWait?.resolve();
 			this.#handoffWait = undefined;
 			this.#scheduleClose();
+		} else if (frame.type === "notice" && frame.source === "session-persistence" && this.#rpc)
+			void this.#followMove(this.#rpc);
+	}
+
+	/**
+	 * OMP announces moving the session to a new file (README, "Known limitations") with a `session-persistence` notice
+	 * before it writes there. History reads the new file under the session's first id by itself; the actor asks OMP for
+	 * the file so its task agents and its next resume use it. Never rejects: it runs detached from frame handling.
+	 */
+	async #followMove(rpc: RpcSupervisor): Promise<void> {
+		try {
+			const state = await rpc.command({ id: `state:${crypto.randomUUID()}`, type: "get_state" }, 30_000);
+			const data = state.data;
+			if (data && typeof data === "object" && "sessionFile" in data && typeof data.sessionFile === "string")
+				this.meta.file = data.sessionFile;
+		} catch (error) {
+			console.error(`Could not find the new file of session ${this.sessionId}`, error);
 		}
+		void this.#reconcile();
 	}
 
 	#upsertMessage(frame: Frame): void {
@@ -824,13 +878,13 @@ export class SessionActor {
 				});
 		this.#transition({ type: "server.crashed" });
 	}
-	#checkPid(pid: number): void {
+	#checkPid(pid: number, gone: "terminal.pidGone" | "terminal.released" = "terminal.pidGone"): void {
 		const poll = () => {
 			try {
 				process.kill(pid, 0);
 				setTimeout(poll, 250).unref();
 			} catch {
-				this.#transition({ type: "terminal.pidGone", pid });
+				this.#transition({ type: gone, pid });
 			}
 		};
 		poll();
