@@ -16,7 +16,7 @@ The composer's `+` button (`Composer menu`) opens a menu with **Photos**, **Usag
 Preconditions: app paired to this run's server. Costs one small model turn.
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/usage -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/usage.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/usage -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/usage.yaml
 ```
 
 Screenshots `usage-01-menu` … `usage-05-swiped-down`. Selectors: `Composer menu`, `Usage` and `Photos` (menu rows), `Close` (sheet header), limit rows `<label>, <N>% used`.

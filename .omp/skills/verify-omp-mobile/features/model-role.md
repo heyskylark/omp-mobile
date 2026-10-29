@@ -17,7 +17,7 @@ The composer switches a session between the OMP `smol`, `default`, and `slow` mo
 Preconditions: app paired to this run's server. Costs one small model turn on the user's `slow` role model.
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/model-role -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/model-role.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/model-role -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/model-role.yaml
 ```
 
 Screenshots `role-01-compact` … `role-08-session-smol`. Selectors: `Model: <Role>` (button), `Model role Smol|Default|Slow` (slider stops; a tap on one selects it), `Dismiss model picker` (backdrop). Swipe from `Model role Default` with `direction: RIGHT` drags the knob to `slow`.

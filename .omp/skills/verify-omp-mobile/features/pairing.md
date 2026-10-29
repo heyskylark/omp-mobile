@@ -30,44 +30,44 @@ Preconditions: Launch + Doctor passed. Every pairing flow answers the notificati
 
   ```sh
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> pair-link
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/deeplink -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-deeplink.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/deeplink -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-deeplink.yaml
   ```
 
   The flow taps `Open` on iOS's `Open in “OMP”?` prompt when it appears. Screenshots: `deeplink-00-notification-permission` (first pairing only), `deeplink-01-machine-sessions`.
 - **Typed link with the menu bar's code:** launch the menu bar app (SKILL.md Launch step 5), capture its window with `window-shot.sh`, read the code, and build `<link>` as `ompmobile://pair?v=1&url=<percent-encoded server URL from doctor>&code=<code>&name=<MACHINE_NAME>`. Then:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair-open .omp/skills/verify-omp-mobile/flows/open-add-computer.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/typed -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-typed.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair-open .omp/skills/verify-omp-mobile/flows/open-add-computer.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/typed -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-typed.yaml
   ```
 
   `typed-01-link-above-keyboard` must show the field and `Connect` above the keyboard. After the next 5 s poll, the menu bar window shows `Connected iPhone` (`menubar.md`).
 - **Rejected links:** a malformed link, then the same used link again:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rejected-malformed -e 'PAIR_LINK=ompmobile://pair?v=1&code=NOPE' -e 'EXPECT=That is not a valid OMP pairing link\.' .omp/skills/verify-omp-mobile/flows/pair-rejected.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rejected-used -e 'PAIR_LINK=<already used link>' -e 'EXPECT=Pairing code is invalid or expired' .omp/skills/verify-omp-mobile/flows/pair-rejected.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rejected-malformed -e 'PAIR_LINK=ompmobile://pair?v=1&code=NOPE' -e 'EXPECT=That is not a valid OMP pairing link\.' .omp/skills/verify-omp-mobile/flows/pair-rejected.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rejected-used -e 'PAIR_LINK=<already used link>' -e 'EXPECT=Pairing code is invalid or expired' .omp/skills/verify-omp-mobile/flows/pair-rejected.yaml
   ```
 
 - **Re-pair:** with the computer paired, run the deep-link flow with a fresh `pair-link`. `api.ts <RUN_ID> status` must still show exactly one `iPhone` device, now with the newer `pairedAt`.
 - **Paste button:** only when `defaults read com.apple.iphonesimulator PasteboardAutomaticSync` prints `0` or Simulator.app is not running; otherwise report it not driven and save that output as evidence:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair-open .omp/skills/verify-omp-mobile/flows/open-add-computer.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair-open .omp/skills/verify-omp-mobile/flows/open-add-computer.yaml
   printf %s '<link>' | xcrun simctl pbcopy <SIM_UDID>
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-paste.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/pair -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-paste.yaml
   ```
 
-- **Rename computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rename -e MACHINE_NAME=<MACHINE_NAME> -e 'NEW_NAME=<new name>' .omp/skills/verify-omp-mobile/flows/rename-computer.yaml`. Then `api.ts <RUN_ID> status` must report the new `machineName`, and `<OMP_MOBILE_HOME>/config.json` must hold it next to the run's other keys. Rename back (or use the new name as `MACHINE_NAME`) before recipes that select the computer by name; `doctor.ts` checks the name against `run.env`.
+- **Rename computer:** `MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/rename -e MACHINE_NAME=<MACHINE_NAME> -e 'NEW_NAME=<new name>' .omp/skills/verify-omp-mobile/flows/rename-computer.yaml`. Then `api.ts <RUN_ID> status` must report the new `machineName`, and `<OMP_MOBILE_HOME>/config.json` must hold it next to the run's other keys. Rename back (or use the new name as `MACHINE_NAME`) before recipes that select the computer by name; `doctor.ts` checks the name against `run.env`.
 - **Rename from elsewhere:** rename as the probe device, then relaunch the app:
 
   ```sh
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get /v1/info   # pairs verify-probe once
   curl -sS -X PUT -H "authorization: Bearer $(jq -r .token ~/.cache/omp-mobile-verify/<RUN_ID>/probe.json)" -H 'content-type: application/json' -d '{"machineName":"<other name>"}' http://127.0.0.1:<PORT>/v1/machine/name
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/name-refresh -e 'NEW_NAME=<other name>' .omp/skills/verify-omp-mobile/flows/computer-name-refresh.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/name-refresh -e 'NEW_NAME=<other name>' .omp/skills/verify-omp-mobile/flows/computer-name-refresh.yaml
   ```
 
-- **Remove computer:** `maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/remove -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/remove-computer.yaml`. The computer's `status` must lose that `iPhone` device. Run it last, or on a second run's server, which is a separate computer to the app (SKILL.md Scope).
+- **Remove computer:** `MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/remove -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/remove-computer.yaml`. The computer's `status` must lose that `iPhone` device. Run it last, or on a second run's server, which is a separate computer to the app (SKILL.md Scope).
 - **Second observation:** after every step, `api.ts <RUN_ID> status > <EVIDENCE>/<step>-status.json`. Check `devices` (name, `pairedAt`, `lastSeenAt`) and `pairings[].consumedBy`, which names the device that used each code.
 
 ## Gotchas

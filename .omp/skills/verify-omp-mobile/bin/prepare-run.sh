@@ -40,6 +40,10 @@ const config = {
 await Bun.write(`${e.WORK}/../home/config.json`, JSON.stringify(config, null, 2) + "\n");
 '
 printf 'collab:\n  autoStart: control\n  relayUrl: ws://127.0.0.1:%s\n' "$RELAY_PORT" >"$SCRATCH/collab.yml"
+# Maestro probes the Android emulator ports 5555-5585 on localhost even for iOS and blocks forever on a non-ADB
+# listener there (e.g. Native Instruments' NTKDaemon on 127.0.0.1:5563). Resolving localhost to ::1 alone makes
+# IPv4-only listeners refuse the probe; the iOS driver still works.
+printf '::1 localhost\n' >"$SCRATCH/maestro-hosts"
 
 cat >"$SCRATCH/run.env" <<EOF
 RUN_ID=$RUN_ID
@@ -52,5 +56,6 @@ WORK=$SCRATCH/work
 PROJECT=$SCRATCH/work/project
 EVIDENCE=$EVIDENCE
 MACHINE_NAME=omp-verify-$RUN_ID
+MAESTRO_OPTS=-Djdk.net.hosts.file=$SCRATCH/maestro-hosts
 EOF
 cat "$SCRATCH/run.env"
