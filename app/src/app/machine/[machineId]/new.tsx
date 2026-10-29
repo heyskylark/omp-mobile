@@ -205,7 +205,12 @@ function AgentOption({
 	onPress(): void;
 }) {
 	return (
-		<Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}>
+		<Pressable
+			accessibilityRole="button"
+			accessibilityLabel={description ? `${name}, ${description}` : name}
+			accessibilityState={{ selected }}
+			onPress={onPress}
+		>
 			<Surface className={`flex-row items-center gap-3 py-3 ${selected ? "border-accent bg-surface-raised" : ""}`}>
 				<Icon name="person.crop.circle" color={selected ? "#8B93FF" : "#9A9AA2"} />
 				<View className="flex-1">

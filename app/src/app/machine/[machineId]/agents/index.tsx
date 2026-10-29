@@ -74,6 +74,9 @@ function AgentRow({ agent, onPress }: { agent: AgentDefinition; onPress(): void 
 		<Pressable
 			onPress={onPress}
 			accessibilityRole="button"
+			accessibilityLabel={[agent.name, agent.structured ? "Subagent only" : "", agent.description, details.join(" · ")]
+				.filter(Boolean)
+				.join(", ")}
 			className="flex-row items-center gap-3 border-b border-border bg-ink px-4 py-4"
 		>
 			<Icon name="person.crop.circle" color={agent.structured ? "#6F6F77" : "#8B93FF"} size={22} />
