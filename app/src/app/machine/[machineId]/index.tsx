@@ -12,7 +12,7 @@ import {
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import type { RecentProject, ServerMessage, SessionSummary } from "@omp-mobile/protocol";
 import { ErrorState, Icon, Loading } from "../../../components/ui";
-import { groupSessions, LivenessBadge, relativeTime } from "../../../components/session-meta";
+import { AgentBadge, groupSessions, LivenessBadge, relativeTime } from "../../../components/session-meta";
 import { OmpApi, OmpApiError } from "../../../data/api";
 import { acquireMachineSocket } from "../../../data/live";
 import { useMachine } from "../../../data/machines";
@@ -124,6 +124,12 @@ export default function SessionsScreen() {
 			title: machine?.name ?? "Sessions",
 			headerRight: () => (
 				<View className="flex-row gap-4">
+					<Pressable
+						accessibilityLabel="Agents"
+						onPress={() => router.push({ pathname: "/machine/[machineId]/agents", params: { machineId } })}
+					>
+						<Icon name="person.crop.circle" color="#9A9AA2" size={19} />
+					</Pressable>
 					<Pressable
 						accessibilityLabel="Jobs"
 						onPress={() => router.push({ pathname: "/machine/[machineId]/jobs", params: { machineId } })}
@@ -251,6 +257,7 @@ export default function SessionsScreen() {
 										{item.project.name}
 									</Text>
 									<Text className="text-caption text-secondary">· {relativeTime(item.updatedAt)}</Text>
+									{item.agent ? <AgentBadge name={item.agent} size="small" /> : null}
 								</View>
 								{item.preview ? (
 									<Text numberOfLines={1} className="mt-1.5 text-caption text-secondary">

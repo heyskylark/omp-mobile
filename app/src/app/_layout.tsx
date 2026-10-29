@@ -69,6 +69,8 @@ export default function RootLayout() {
 							/>
 							<Stack.Screen name="machine/[machineId]/settings" options={{ title: "Computer" }} />
 							<Stack.Screen name="machine/[machineId]/jobs" options={{ title: "Jobs" }} />
+							<Stack.Screen name="machine/[machineId]/agents/index" options={{ title: "Agents" }} />
+							<Stack.Screen name="machine/[machineId]/agents/edit" options={{ title: "Agent" }} />
 							<Stack.Screen name="machine/[machineId]/usage" options={{ title: "Usage", presentation: "modal" }} />
 							<Stack.Screen
 								name="machine/[machineId]/browser"

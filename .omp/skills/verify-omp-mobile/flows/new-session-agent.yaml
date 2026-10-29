@@ -1,0 +1,52 @@
+# Starts a session as an agent: New session's Agent section (Default plus agents that are not subagent-only), the
+# note shown when an agent pins a model, then the session header and session-list row with the agent badge.
+# Picks the scratch project through Browse, since a scratch HOME has no recent projects.
+# Expects PINNED (an agent with a model) and AGENT (the one to start) on the computer.
+# env: MACHINE_NAME, PINNED, AGENT, PROMPT
+appId: com.heyskylark.ompmobile
+name: new-session-agent
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "add"
+- extendedWaitUntil:
+    visible: "New session"
+    timeout: 15000
+- tapOn: ".*Browse.*"
+- extendedWaitUntil:
+    visible: "Choose folder"
+    timeout: 15000
+- tapOn: ".*project.*"
+- tapOn: ".*Use this folder.*"
+- extendedWaitUntil:
+    visible: "${PINNED}, .*"
+    timeout: 15000
+- tapOn: "${PINNED}, .*"
+- extendedWaitUntil:
+    visible: "${PINNED} always uses the model .*"
+    timeout: 5000
+- takeScreenshot: agent-01-picker-pinned-model
+- tapOn: "${AGENT}, .*"
+- assertNotVisible: ".* always uses the model .*"
+- takeScreenshot: agent-02-picker-selected
+- tapOn: "Message OMP"
+- inputText: ${PROMPT}
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: "Session menu"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "Send"
+    timeout: 120000
+- assertVisible: "Agent ${AGENT}"
+- takeScreenshot: agent-03-session-header
+- tapOn:
+    id: "BackButton"
+- extendedWaitUntil:
+    visible: "Search sessions"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: agent-04-session-list

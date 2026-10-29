@@ -6,19 +6,31 @@ import type { ModelRole, RecentProject } from "@omp-mobile/protocol";
 import * as Haptics from "expo-haptics";
 import { Composer, useComposerDraft } from "../../../components/composer";
 import { ErrorState, Icon, Loading, Surface } from "../../../components/ui";
+import { useAgentList } from "../../../data/agent-definitions";
 import { OmpApi, operationId } from "../../../data/api";
 import { useMachine } from "../../../data/machines";
 import { sessionOutbox } from "../../../data/outbox";
 import { useSkills } from "../../../data/skills";
 
 export default function NewSessionScreen() {
-	const { machineId, cwd } = useLocalSearchParams<{ machineId: string; cwd?: string }>();
+	const {
+		machineId,
+		cwd,
+		agent: agentParam,
+	} = useLocalSearchParams<{ machineId: string; cwd?: string; agent?: string }>();
 	const machine = useMachine(machineId);
 	const headerHeight = useHeaderHeight();
 	const [projects, setProjects] = useState<RecentProject[]>([]);
 	const [selected, setSelected] = useState(cwd ?? "");
 	const [modelRole, setModelRole] = useState<ModelRole>("default");
 	const [advisor, setAdvisor] = useState(false);
+	const [agentName, setAgentName] = useState(agentParam ?? "");
+	const agents = useAgentList(machine);
+	// Structured agents return results to a parent agent, so they cannot drive a conversation.
+	const pickable = agents.list?.items.filter((item) => !item.structured) ?? [];
+	const agent = pickable.find((item) => item.name === agentName);
+	// An agent passed in by route waits for the list instead of silently starting a default session.
+	const waitingForAgent = Boolean(agentName) && !agents.list && !agents.error;
 	const [state, setState] = useState<"loading" | "ready" | "error" | "creating">("loading");
 	const [error, setError] = useState("");
 	const draft = useComposerDraft(`${machineId}/new`);
@@ -45,7 +57,7 @@ export default function NewSessionScreen() {
 	const create = async () => {
 		const prompt = draft.text;
 		const images = draft.images;
-		if (!selected || (!prompt.trim() && !images.length) || state === "creating") return;
+		if (!selected || (!prompt.trim() && !images.length) || state === "creating" || waitingForAgent) return;
 		setState("creating");
 		try {
 			const created = await new OmpApi(machine).create({
@@ -53,8 +65,9 @@ export default function NewSessionScreen() {
 				cwd: selected,
 				prompt: prompt.trim(),
 				...(images.length ? { images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : {}),
-				...(modelRole === "default" ? {} : { modelRole }),
+				...(modelRole === "default" || agent?.model ? {} : { modelRole }),
 				...(advisor ? { advisor: true } : {}),
+				...(agent ? { agent: agent.name } : {}),
 			});
 			await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 			sessionOutbox(machineId, created.sessionId).created(prompt.trim(), images);
@@ -117,6 +130,40 @@ export default function NewSessionScreen() {
 					</Pressable>
 				))}
 				{state === "error" ? <Text className="text-caption text-danger">{error}</Text> : null}
+				{pickable.length ? (
+					<>
+						<View className="mb-1 mt-4 flex-row items-center justify-between">
+							<Text className="text-[13px] font-semibold uppercase tracking-wider text-secondary">Agent</Text>
+							<Pressable
+								onPress={() => router.push({ pathname: "/machine/[machineId]/agents", params: { machineId } })}
+								className="flex-row items-center gap-1"
+							>
+								<Icon name="slider.horizontal.3" color="#8B93FF" size={15} />
+								<Text className="text-[14px] font-medium text-accent">Manage</Text>
+							</Pressable>
+						</View>
+						<AgentOption
+							name="Default"
+							description="OMP's usual tools and instructions"
+							selected={!agent}
+							onPress={() => setAgentName("")}
+						/>
+						{pickable.map((item) => (
+							<AgentOption
+								key={item.name}
+								name={item.name}
+								description={item.description}
+								selected={agent?.name === item.name}
+								onPress={() => setAgentName(item.name)}
+							/>
+						))}
+						{agent?.model ? (
+							<Text className="px-1 text-caption text-secondary">
+								{agent.name} always uses the model {agent.model}, so the model choice below doesn't apply.
+							</Text>
+						) : null}
+					</>
+				) : null}
 			</ScrollView>
 			{error && state !== "error" ? (
 				<Text className="px-5 pb-2 text-center text-caption text-danger">{error}</Text>
@@ -129,18 +176,52 @@ export default function NewSessionScreen() {
 					onSend={() => void create()}
 					onStop={() => {}}
 					working={false}
-					disabled={!selected || state === "creating"}
+					disabled={!selected || state === "creating" || waitingForAgent}
 					images={draft.images}
 					onAttach={draft.attach}
 					onPasteImages={draft.paste}
 					onRemoveImage={draft.remove}
 					modelRole={modelRole}
 					onModelRoleChange={setModelRole}
+					modelRoleDisabled={Boolean(agent?.model)}
 					advisor={advisor}
 					onAdvisorChange={setAdvisor}
 					skills={skills}
 				/>
 			</View>
 		</KeyboardAvoidingView>
+	);
+}
+
+function AgentOption({
+	name,
+	description,
+	selected,
+	onPress,
+}: {
+	name: string;
+	description: string;
+	selected: boolean;
+	onPress(): void;
+}) {
+	return (
+		<Pressable
+			accessibilityRole="button"
+			accessibilityLabel={description ? `${name}, ${description}` : name}
+			accessibilityState={{ selected }}
+			onPress={onPress}
+		>
+			<Surface className={`flex-row items-center gap-3 py-3 ${selected ? "border-accent bg-surface-raised" : ""}`}>
+				<Icon name="person.crop.circle" color={selected ? "#8B93FF" : "#9A9AA2"} />
+				<View className="flex-1">
+					<Text className="text-body font-medium text-primary">{name}</Text>
+					{description ? (
+						<Text numberOfLines={2} className="text-caption text-secondary">
+							{description}
+						</Text>
+					) : null}
+				</View>
+			</Surface>
+		</Pressable>
 	);
 }

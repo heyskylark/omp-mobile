@@ -1,5 +1,6 @@
 import type { Liveness, SessionSummary } from "@omp-mobile/protocol";
 import { Text, View } from "react-native";
+import { Icon } from "./ui";
 
 export function livenessLabel(liveness: Liveness, pendingCount = 0): string | null {
 	if (pendingCount > 0) return "Needs you";
@@ -31,6 +32,23 @@ export function LivenessBadge({ session }: { session: SessionSummary }) {
 	return (
 		<View className="rounded-full border border-border bg-surface-raised px-2.5 py-1">
 			<Text className={`text-[12px] font-medium ${tone}`}>{label}</Text>
+		</View>
+	);
+}
+
+/** The agent a session or job was started as. */
+export function AgentBadge({ name, size = "regular" }: { name: string; size?: "regular" | "small" }) {
+	const small = size === "small";
+	return (
+		<View
+			accessible
+			accessibilityLabel={`Agent ${name}`}
+			className={`shrink flex-row items-center gap-1 rounded-full border border-border bg-surface-raised ${small ? "px-1.5 py-px" : "px-2 py-0.5"}`}
+		>
+			<Icon name="person.crop.circle" color="#8B93FF" size={small ? 10 : 12} />
+			<Text numberOfLines={1} className={`shrink font-medium text-accent ${small ? "text-[10px]" : "text-[12px]"}`}>
+				{name}
+			</Text>
 		</View>
 	);
 }
