@@ -4,6 +4,7 @@ const bundleIdentifier = process.env.OMP_BUNDLE_ID ?? "com.heyskylark.ompmobile"
 const sharedSuffix = `${bundleIdentifier}.shared`;
 // Free Apple accounts (Xcode Personal Teams) cannot sign the Push Notifications capability.
 const personalTeam = process.env.OMP_PERSONAL_TEAM === "1";
+const projectId = process.env.EAS_PROJECT_ID;
 
 const config: ExpoConfig = {
 	name: "OMP",
@@ -15,7 +16,11 @@ const config: ExpoConfig = {
 	userInterfaceStyle: "dark",
 	experiments: { typedRoutes: true },
 	owner: process.env.EXPO_OWNER,
-	extra: { eas: { projectId: process.env.EAS_PROJECT_ID } },
+	extra: { eas: { projectId } },
+	// Without an EAS project, builds run only their embedded bundle. The fingerprint changes with any native change, so
+	// an update reaches only builds whose native code matches the JavaScript it was published from.
+	...(projectId ? { updates: { url: `https://u.expo.dev/${projectId}` } } : {}),
+	runtimeVersion: { policy: "fingerprint" },
 	ios: {
 		bundleIdentifier,
 		appleTeamId: process.env.APPLE_TEAM_ID,

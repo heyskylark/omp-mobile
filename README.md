@@ -207,6 +207,27 @@ The app builds with [EAS Build](https://docs.expo.dev/build/introduction/) and u
 
 Run `scripts/testflight.sh` again for each new build. The production profile increments the build number automatically.
 
+### Ship JavaScript changes without a new build
+
+TestFlight builds check the `production` channel of [EAS Update](https://docs.expo.dev/eas-update/introduction/) when they open, download a newer update, and run it the next time they open.
+
+1. Store the build variables in the project's `production` environment on EAS once, so cloud builds and updates resolve the same app config.
+
+   ```sh
+   cd app
+   for name in EAS_PROJECT_ID APPLE_TEAM_ID EXPO_OWNER; do
+     bunx eas-cli env:create --environment production --visibility plaintext --name "$name" --value "$(printenv "$name")"
+   done
+   ```
+
+2. Publish an update.
+
+   ```sh
+   scripts/ota.sh "Fix message delivery labels"
+   ```
+
+The runtime version is a fingerprint of the app's native code and config. An update reaches only builds with the same fingerprint, so a change to native code, a native dependency, `app.config.ts`, `app/eas.json`, or a config plugin needs a new TestFlight build instead. `bunx eas-cli fingerprint:compare --build-id <build id> --environment production` in `app/` names the files that differ from a build.
+
 ### Turn on push notifications
 
 Push notifications go from each computer straight to Apple. Each computer needs an APNs key.
