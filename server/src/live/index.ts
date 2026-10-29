@@ -8,6 +8,7 @@ import type {
 	SessionSnapshot,
 	TimelinePage,
 } from "@omp-mobile/protocol";
+import { UnknownAgentError } from "../agents/store.ts";
 import type { SessionMeta } from "../history/api.ts";
 import type { AgentSignal } from "./agents.ts";
 import { SessionActor } from "./actor.ts";
@@ -106,6 +107,8 @@ class Hub implements LiveHub {
 
 	async createSession(req: CreateSessionRequest): Promise<{ sessionId: string }> {
 		const cwd = await this.#opts.history.resolveProjectDir(req.cwd);
+		const agent = req.agent ? await this.#opts.agents.get(req.agent) : undefined;
+		if (agent === null) throw new UnknownAgentError(`This computer has no agent named "${req.agent}"`);
 		const now = new Date().toISOString();
 		const actor = new SessionActor(
 			{
@@ -124,6 +127,7 @@ class Hub implements LiveHub {
 		await actor.createNew(req.prompt, req.operationId, req.images ?? [], {
 			modelRole: req.modelRole,
 			advisor: req.advisor,
+			agent,
 		});
 		this.#actors.set(actor.sessionId, actor);
 		this.#broadcast();
@@ -310,6 +314,7 @@ class Hub implements LiveHub {
 			liveness: { kind: "idle" as const },
 			preview: meta.preview,
 			pendingCount: 0,
+			...(meta.agent ? { agent: meta.agent } : {}),
 		};
 	}
 }

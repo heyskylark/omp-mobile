@@ -1,7 +1,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-type SessionEntry = { type: string; message?: { role?: string; content?: unknown } };
+type SessionEntry = {
+	type: string;
+	message?: { role?: string; content?: unknown };
+	customType?: string;
+	data?: unknown;
+};
 type SessionManager = {
 	getSessionId(): string;
 	getSessionFile(): string | undefined;
@@ -46,6 +51,13 @@ type ExtensionApi = {
 	setModel(model: Model): Promise<boolean>;
 	setThinkingLevel(level: string): void;
 	appendEntry(customType: string, data?: unknown): void;
+	getActiveTools(): string[];
+	setActiveTools(toolNames: string[]): Promise<void>;
+	getCommands(): { name: string; source: string; path?: string }[];
+	sendMessage(
+		message: { customType: string; content: string; display: boolean; details?: unknown },
+		options?: { triggerTurn?: boolean },
+	): void;
 	pi: { settings: { getModelRole(role: string): string | undefined } };
 	/** OMP's session event bus; carries the `task:subagent:*` channels. */
 	events?: { on(channel: string, handler: (payload: unknown) => void): unknown };
@@ -73,6 +85,90 @@ const THINKING_LEVELS: Record<string, true> = {
 	max: true,
 	auto: true,
 };
+/** The server passes a new session's agent here as `AgentSnapshot` JSON; keep in sync with `server/src/agents/store.ts`. */
+const AGENT_ENV = "OMP_MOBILE_AGENT";
+/**
+ * Session entry holding the agent snapshot the session started as. It, not the agent's current file, decides the
+ * session's tools and instructions for its lifetime; keep in sync with `server/src/history/catalog.ts`.
+ */
+const AGENT_ENTRY = "omp-mobile-agent";
+/** Tools this extension registers; agent sessions keep them so the phone's features work. Keep in sync with `server/src/agents/tools.ts`. */
+const OWN_TOOLS = ["schedule_job"];
+/** OMP's custom message type for skill content, as its `task` subagents autoload skills. */
+const SKILL_PROMPT_MESSAGE = "skill-prompt";
+const SKILL_PREFIX = "skill:";
+
+type AgentSnapshot = { name: string; tools?: string[]; prompt: string; autoloadSkills?: string[] };
+
+function stringList(value: unknown): string[] | undefined {
+	return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : undefined;
+}
+
+function agentSnapshot(value: unknown): AgentSnapshot | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const { name, tools, prompt, autoloadSkills } = value as Record<string, unknown>;
+	if (typeof name !== "string" || typeof prompt !== "string") return undefined;
+	return { name, prompt, tools: stringList(tools), autoloadSkills: stringList(autoloadSkills) };
+}
+
+/**
+ * The agent the session started as. A session the server starts as an agent records the snapshot the server passed
+ * (`isNew`); later runs of the session, in the server or a terminal, read it back.
+ */
+function sessionAgent(
+	api: ExtensionApi,
+	sessionManager: SessionManager,
+): { agent: AgentSnapshot; isNew: boolean } | undefined {
+	const entry = sessionManager
+		.getEntries()
+		.find((entry) => entry.type === "custom" && entry.customType === AGENT_ENTRY);
+	if (entry) {
+		const agent = agentSnapshot(entry.data);
+		return agent && { agent, isNew: false };
+	}
+	const provided = process.env[AGENT_ENV];
+	if (!provided) return undefined;
+	// Consumed once, so the session's task subagents and the processes it spawns start without it.
+	delete process.env[AGENT_ENV];
+	let data: unknown;
+	try {
+		data = JSON.parse(provided);
+	} catch {
+		return undefined;
+	}
+	const agent = agentSnapshot(data);
+	if (!agent) return undefined;
+	api.appendEntry(AGENT_ENTRY, data);
+	return { agent, isNew: true };
+}
+
+/**
+ * Loads the agent's skills into a new session's context the way OMP's `task` subagents do (`autoload` skill messages
+ * before the first prompt). Skills come from OMP's `/skill:<name>` commands, so a skill missing on this computer, or
+ * all of them when OMP's `skills.enableSkillCommands` is off, is skipped.
+ */
+async function autoloadSkills(api: ExtensionApi, names: string[]): Promise<void> {
+	const paths = new Map(
+		api
+			.getCommands()
+			.filter((command) => command.source === "skill" && command.name.startsWith(SKILL_PREFIX) && command.path)
+			.map((command) => [command.name.slice(SKILL_PREFIX.length), command.path!]),
+	);
+	for (const name of names) {
+		const path = paths.get(name);
+		if (!path) continue;
+		const body = (await Bun.file(path).text()).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+		api.sendMessage(
+			{
+				customType: SKILL_PROMPT_MESSAGE,
+				content: `${body}\n\n---\n\nSkill: ${path}`,
+				display: false,
+				details: { name, path },
+			},
+			{ triggerTurn: false },
+		);
+	}
+}
 
 /**
  * OMP's extension API resolves a role to its model but drops the `:level` suffix, so read the level from the
@@ -275,7 +371,11 @@ function followServer(context: ExtensionContext): void {
 
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-async function scheduleJob(params: Record<string, string>, context: ExtensionContext): Promise<ToolResult> {
+async function scheduleJob(
+	params: Record<string, string>,
+	context: ExtensionContext,
+	agent: string | undefined,
+): Promise<ToolResult> {
 	const server = await readServer();
 	if (!server) throw new Error("The OMP Mobile server is not running on this computer, so jobs cannot be scheduled.");
 	const response = await fetch(`http://127.0.0.1:${server.port}/internal/jobs`, {
@@ -287,6 +387,7 @@ async function scheduleJob(params: Record<string, string>, context: ExtensionCon
 			schedule: params.schedule,
 			sessionId: context.sessionManager.getSessionId(),
 			cwd: context.cwd,
+			agent,
 		}),
 		signal: AbortSignal.timeout(10_000),
 	});
@@ -378,9 +479,33 @@ export default function ompMobileExtension(api: ExtensionApi): void {
 		if (payload && typeof payload === "object")
 			reportAgent(agentSignal(Reflect.get(payload, "progress"), Reflect.get(payload, "sessionFile")), false);
 	});
-	api.on("session_start", (event, context) => {
+	// The agent the current session runs as, and the tools it replaced (restored if the process moves to a session
+	// without an agent).
+	let agent: AgentSnapshot | undefined;
+	let defaultTools: string[] | undefined;
+	const applyAgent = async (context: ExtensionContext) => {
+		const found = sessionAgent(api, context.sessionManager);
+		agent = found?.agent;
+		if (agent?.tools) {
+			defaultTools ??= api.getActiveTools();
+			await api.setActiveTools([...new Set([...agent.tools, ...OWN_TOOLS])]);
+		} else if (defaultTools) {
+			await api.setActiveTools(defaultTools);
+			defaultTools = undefined;
+		}
+		// Skill messages become part of the session, so a resumed session already has them.
+		if (found?.isNew && agent?.autoloadSkills?.length) await autoloadSkills(api, agent.autoloadSkills);
+	};
+	api.on("session_start", async (event, context) => {
 		forward([])(event, context);
 		if (context.mode === "tui") followServer(context);
+		await applyAgent(context);
+	});
+	api.on("session_switch", (_event, context) => applyAgent(context));
+	api.on("before_agent_start", (event) => {
+		if (agent?.prompt && Array.isArray(event.systemPrompt))
+			return { systemPrompt: [...event.systemPrompt, agent.prompt] };
+		return undefined;
 	});
 	api.on("session_shutdown", (event, context) => {
 		clearInterval(serverWatch);
@@ -418,7 +543,7 @@ export default function ompMobileExtension(api: ExtensionApi): void {
 				),
 			schedule: z.string().describe("5-field cron expression or nickname, in the computer's local time"),
 		}),
-		execute: (_toolCallId, params, _signal, _onUpdate, context) => scheduleJob(params, context),
+		execute: (_toolCallId, params, _signal, _onUpdate, context) => scheduleJob(params, context, agent?.name),
 	});
 	// rpc modes always set PI_NO_TITLE, so only an explicit `--no-title` (e.g. in the server's rpcArgs) opts out here.
 	if (process.argv.includes("--no-title")) return;

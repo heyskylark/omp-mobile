@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type {
 	AdminStatus,
+	AgentDefinition,
+	AgentListResponse,
+	CreateSessionRequest,
 	BrowserServerMessage,
 	Job,
 	JobListResponse,
@@ -13,6 +16,7 @@ import type {
 	SessionSnapshot,
 	SessionSummary,
 } from "@omp-mobile/protocol";
+import { AgentStore, UnknownAgentError } from "../agents/store.ts";
 import { createBrowserService } from "../browser/index.ts";
 import type { History } from "../history/api.ts";
 import { ImageStore } from "../history/images.ts";
@@ -75,7 +79,7 @@ class FakeHub implements LiveHub {
 	onBroadcast() {
 		return () => {};
 	}
-	async createSession() {
+	async createSession(_request: CreateSessionRequest) {
 		return { sessionId: "s1" };
 	}
 	async prompt() {
@@ -206,10 +210,12 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 		extensionToken: "extension",
 		jobs: jobs.service,
 		pins,
+		agents: new AgentStore(join(directory, "agents")),
+		tools: { list: async () => ["bash", "read"] },
 	};
 	const pairing = devices.createPairing();
 	const paired = await devices.pair(pairing.code, "Phone");
-	return { options, devices, hub, token: paired!.token };
+	return { options, devices, hub, token: paired!.token, agentsDir: join(directory, "agents") };
 }
 
 describe("HTTP API", () => {
@@ -225,6 +231,146 @@ describe("HTTP API", () => {
 		expect(
 			(await handler(new Request("http://mac/admin/status", { headers: { authorization: "Bearer admin" } }))).status,
 		).toBe(404);
+	});
+
+	test("lists, creates, replaces, and deletes OMP agent files", async () => {
+		const { options, token, agentsDir } = await fixture();
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+		const put = (name: string, input: unknown) =>
+			handler(new Request(`http://mac/v1/agents/${name}`, { method: "PUT", headers, body: JSON.stringify(input) }));
+		const list = async () =>
+			(await (await handler(new Request("http://mac/v1/agents", { headers }))).json()) as AgentListResponse;
+		expect((await handler(new Request("http://mac/v1/agents"))).status).toBe(401);
+		expect(await list()).toEqual({ items: [], tools: ["bash", "read"] });
+
+		await mkdir(agentsDir);
+		await writeFile(
+			join(agentsDir, "scout.md"),
+			[
+				"---",
+				"name: scout",
+				"description: Fast read-only codebase scout",
+				"tools: read, grep, glob",
+				'model: "@smol"',
+				"thinking-level: medium",
+				"read-summarize: false",
+				"output:",
+				"  properties:",
+				"    summary:",
+				"      type: string",
+				"---",
+				"",
+				"Scout the codebase.",
+				"",
+			].join("\n"),
+		);
+		await writeFile(join(agentsDir, "Not An Agent.md"), "---\ndescription: skipped\n---\n");
+		await writeFile(join(agentsDir, "notes.md"), "No frontmatter, so OMP skips it.\n");
+		const scout: AgentDefinition = {
+			name: "scout",
+			description: "Fast read-only codebase scout",
+			tools: ["read", "grep", "glob"],
+			model: "@smol",
+			thinkingLevel: "medium",
+			prompt: "Scout the codebase.",
+			structured: true,
+		};
+		expect((await list()).items).toEqual([scout]);
+
+		const created = await put("reviewer", {
+			description: "Reviews diffs",
+			tools: ["read", "bash"],
+			thinkingLevel: "high",
+			autoloadSkills: ["review"],
+			prompt: "Review the diff.\n",
+		});
+		expect(created.status).toBe(201);
+		expect(await created.json()).toEqual({
+			name: "reviewer",
+			description: "Reviews diffs",
+			tools: ["read", "bash"],
+			thinkingLevel: "high",
+			autoloadSkills: ["review"],
+			prompt: "Review the diff.",
+			structured: false,
+		});
+		expect(await readFile(join(agentsDir, "reviewer.md"), "utf8")).toBe(
+			[
+				"---",
+				"name: reviewer",
+				"description: Reviews diffs",
+				'tools: "read, bash"',
+				"thinking-level: high",
+				"autoloadSkills:",
+				"  - review",
+				"---",
+				"",
+				"Review the diff.",
+				"",
+			].join("\n"),
+		);
+
+		// Unchanged fields and keys the server does not model keep their spelling.
+		const replaced = await put("scout", { ...scout, name: undefined, structured: undefined, prompt: "Scout faster." });
+		expect(replaced.status).toBe(200);
+		expect(await replaced.json()).toEqual({ ...scout, prompt: "Scout faster." });
+		const scoutFile = await readFile(join(agentsDir, "scout.md"), "utf8");
+		expect(scoutFile).toContain('tools: "read, grep, glob"\n');
+		expect(scoutFile).toContain("read-summarize: false\n");
+		expect(scoutFile).toContain("output:\n  properties:\n    summary:\n      type: string\n");
+		expect(scoutFile.endsWith("---\n\nScout faster.\n")).toBe(true);
+		const cleared = await put("scout", { description: "Scout", prompt: "Scout faster." });
+		expect(await cleared.json()).toEqual({
+			name: "scout",
+			description: "Scout",
+			prompt: "Scout faster.",
+			structured: true,
+		});
+		expect((await list()).items.map((agent) => agent.name)).toEqual(["reviewer", "scout"]);
+
+		expect((await put("Bad_Name", { description: "x", prompt: "" })).status).toBe(400);
+		const invalid = await put("ok", { description: "x", tools: ["read, bash"], prompt: "" });
+		expect(invalid.status).toBe(400);
+		expect(await invalid.json()).toMatchObject({ code: "bad_request" });
+		expect((await put("ok", { description: "x", thinkingLevel: "ultra", prompt: "" })).status).toBe(400);
+
+		const remove = () => handler(new Request("http://mac/v1/agents/reviewer", { method: "DELETE", headers }));
+		expect((await remove()).status).toBe(204);
+		expect((await remove()).status).toBe(404);
+		expect((await handler(new Request("http://mac/v1/agents/Bad_Name", { method: "DELETE", headers }))).status).toBe(
+			400,
+		);
+	});
+
+	test("starts sessions as an agent and rejects unknown agents", async () => {
+		const { options, token, hub } = await fixture();
+		const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+		const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+		const create = (agent: string) =>
+			handler(
+				new Request("http://mac/v1/sessions", {
+					method: "POST",
+					headers,
+					body: JSON.stringify({ operationId: "op", cwd: "/tmp/project", prompt: "hi", agent }),
+				}),
+			);
+		const requests: CreateSessionRequest[] = [];
+		hub.createSession = async (request: CreateSessionRequest) => {
+			requests.push(request);
+			if (request.agent === "missing") throw new UnknownAgentError('This computer has no agent named "missing"');
+			return { sessionId: "s1" };
+		};
+		expect((await create("reviewer")).status).toBe(201);
+		expect(requests[0]?.agent).toBe("reviewer");
+		const unknown = await create("missing");
+		expect(unknown.status).toBe(400);
+		expect(await unknown.json()).toEqual({
+			code: "bad_request",
+			message: 'This computer has no agent named "missing"',
+		});
+		expect((await create("Not Valid")).status).toBe(400);
+		expect(requests).toHaveLength(2);
 	});
 
 	test("only OMP sessions create jobs; paired phones list, pause, resume, and delete them", async () => {

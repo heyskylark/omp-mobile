@@ -9,13 +9,15 @@ export type StoredJob = {
 	name: string;
 	description: string;
 	sessionId: string;
+	/** Agent of the job's session; a replacement session starts as it too. */
+	agent?: string;
 	cwd: string;
 	schedule: string;
 	createdAt: string;
 	lastRunAt?: string;
 } & ({ status: "ACTIVE" | "PAUSED" } | { status: "ERROR"; errorMessage: string });
 
-export type NewJob = Pick<StoredJob, "name" | "description" | "sessionId" | "cwd" | "schedule">;
+export type NewJob = Pick<StoredJob, "name" | "description" | "sessionId" | "agent" | "cwd" | "schedule">;
 
 export type RunOutcome = { sessionId: string } | { error: string };
 
@@ -38,6 +40,7 @@ type Row = {
 	status: JobStatus;
 	error_message: string | null;
 	session_id: string;
+	agent: string | null;
 	cwd: string;
 	schedule: string;
 	created_at: string;
@@ -52,6 +55,7 @@ CREATE TABLE IF NOT EXISTS jobs (
 	status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'PAUSED', 'ERROR')),
 	error_message TEXT,
 	session_id TEXT NOT NULL,
+	agent TEXT,
 	cwd TEXT NOT NULL,
 	schedule TEXT NOT NULL,
 	created_at TEXT NOT NULL,
@@ -65,6 +69,7 @@ function fromRow(row: Row): StoredJob {
 		name: row.name,
 		description: row.description,
 		sessionId: row.session_id,
+		...(row.agent ? { agent: row.agent } : {}),
 		cwd: row.cwd,
 		schedule: row.schedule,
 		createdAt: row.created_at,
@@ -86,11 +91,19 @@ export function createJobStore(path: string, now: () => number = Date.now): JobS
 	chmodSync(path, 0o600);
 	db.run("PRAGMA journal_mode = WAL");
 	db.run(SCHEMA);
+	// Databases created before jobs kept their session's agent.
+	if (
+		!db
+			.query<{ name: string }, []>("PRAGMA table_info(jobs)")
+			.all()
+			.some((column) => column.name === "agent")
+	)
+		db.run("ALTER TABLE jobs ADD COLUMN agent TEXT");
 	const all = db.query<Row, []>("SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC");
 	const byId = db.query<Row, { id: string }>("SELECT * FROM jobs WHERE id = $id");
 	const insert = db.query(
-		`INSERT INTO jobs (id, name, description, status, session_id, cwd, schedule, created_at)
-		 VALUES ($id, $name, $description, 'ACTIVE', $sessionId, $cwd, $schedule, $createdAt)`,
+		`INSERT INTO jobs (id, name, description, status, session_id, agent, cwd, schedule, created_at)
+		 VALUES ($id, $name, $description, 'ACTIVE', $sessionId, $agent, $cwd, $schedule, $createdAt)`,
 	);
 	const updateStatus = db.query("UPDATE jobs SET status = $status, error_message = $error WHERE id = $id");
 	const updateRun = db.query(
@@ -107,7 +120,7 @@ export function createJobStore(path: string, now: () => number = Date.now): JobS
 		get,
 		create(job) {
 			const id = randomUUID();
-			insert.run({ id, ...job, createdAt: new Date(now()).toISOString() });
+			insert.run({ id, ...job, agent: job.agent ?? null, createdAt: new Date(now()).toISOString() });
 			return get(id)!;
 		},
 		setStatus(id, status) {

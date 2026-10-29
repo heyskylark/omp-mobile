@@ -13,7 +13,7 @@ import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import type { RecentProject, ServerMessage, SessionSummary } from "@omp-mobile/protocol";
 import { ErrorState, Icon, Loading } from "../../../components/ui";
-import { groupSessions, LivenessBadge, relativeTime } from "../../../components/session-meta";
+import { AgentBadge, groupSessions, LivenessBadge, relativeTime } from "../../../components/session-meta";
 import { useToast } from "../../../components/toast";
 import { OmpApi, OmpApiError } from "../../../data/api";
 import { acquireMachineSocket } from "../../../data/live";
@@ -128,6 +128,12 @@ export default function SessionsScreen() {
 			title: machine?.name ?? "Sessions",
 			headerRight: () => (
 				<View className="flex-row gap-4">
+					<Pressable
+						accessibilityLabel="Agents"
+						onPress={() => router.push({ pathname: "/machine/[machineId]/agents", params: { machineId } })}
+					>
+						<Icon name="person.crop.circle" color="#9A9AA2" size={19} />
+					</Pressable>
 					<Pressable
 						accessibilityLabel="Jobs"
 						onPress={() => router.push({ pathname: "/machine/[machineId]/jobs", params: { machineId } })}
@@ -351,6 +357,7 @@ function SessionRow({
 								{session.project.name}
 							</Text>
 							<Text className="text-caption text-secondary">· {relativeTime(session.updatedAt)}</Text>
+							{session.agent ? <AgentBadge name={session.agent} size="small" /> : null}
 						</View>
 						{session.preview ? (
 							<Text numberOfLines={1} className="mt-1.5 text-caption text-secondary">

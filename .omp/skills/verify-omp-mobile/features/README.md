@@ -39,4 +39,5 @@ Maintained source for proving OMP Mobile's user-facing behavior. Read this index
 - [Browser live view](./browser.md) — header `Browser` button and `Open browser` card action, live frames, take control and hand back, tap and keyboard input, tab picker, locked-screen state, fake relay.
 - [Transcript images](./images.md) — images in messages, tool images (screenshots, read image files), full-screen viewer, live tool images, `GET /v1/images/:id`.
 - [Scheduled jobs](./jobs.md) — `schedule_job` tool from a real session, cron runs into the job's session, recreation after the session is deleted, error state, Jobs panel list, swipe pause, resume, and delete, tap to open the thread.
+- [Session agents](./session-agents.md) — Agents screen (list, create, edit, delete), New session's agent picker and pinned-model note, agent badge on session header, session list, and jobs.
 - [Menu bar app](./menubar.md) — pairing window and consumed-code confirmation, status panel and status item, remove device, offline.

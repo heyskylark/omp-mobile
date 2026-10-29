@@ -71,6 +71,7 @@ class Scheduler implements JobService {
 			name: job.name,
 			description: job.description,
 			sessionId: job.sessionId,
+			...(job.agent ? { agent: job.agent } : {}),
 			cwd,
 			schedule: job.schedule,
 		});
@@ -122,7 +123,14 @@ class Scheduler implements JobService {
 			await hub.prompt(job.sessionId, { operationId, text: job.description });
 			return job.sessionId;
 		}
-		return (await hub.createSession({ operationId, cwd: job.cwd, prompt: job.description })).sessionId;
+		return (
+			await hub.createSession({
+				operationId,
+				cwd: job.cwd,
+				prompt: job.description,
+				...(job.agent ? { agent: job.agent } : {}),
+			})
+		).sessionId;
 	}
 	#arm(job: StoredJob): void {
 		this.#disarm(job.id);

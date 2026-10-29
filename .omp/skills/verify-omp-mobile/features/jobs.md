@@ -29,8 +29,8 @@ For panel flows without model cost, create jobs directly on the loopback listene
 ```sh
 curl -X POST http://127.0.0.1:<PORT>/internal/jobs -H "x-omp-mobile-token: <extensionToken from <OMP_MOBILE_HOME>/server.json>" -H 'content-type: application/json' \
 	-d '{"name":"Weekly report","description":"Write the weekly report","schedule":"0 9 * * MON","sessionId":"<an existing session id>","cwd":"<PROJECT>"}'
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/jobs-pause -e MACHINE_NAME=<MACHINE_NAME> -e 'JOB_NAME=Weekly report' .omp/skills/verify-omp-mobile/flows/jobs-pause.yaml
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/jobs-resume-open-delete -e MACHINE_NAME=<MACHINE_NAME> -e 'JOB_NAME=Weekly report' .omp/skills/verify-omp-mobile/flows/jobs-resume-open-delete.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/jobs-pause -e MACHINE_NAME=<MACHINE_NAME> -e 'JOB_NAME=Weekly report' .omp/skills/verify-omp-mobile/flows/jobs-pause.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/jobs-resume-open-delete -e MACHINE_NAME=<MACHINE_NAME> -e 'JOB_NAME=Weekly report' .omp/skills/verify-omp-mobile/flows/jobs-resume-open-delete.yaml
 ```
 
 Screenshots `jobs-01-active` … `jobs-06-deleted`. Selectors: `Jobs` (header button), rows `<name>, Active|Paused|Error`, actions `Pause`, `Resume`, `Delete`, thread `Message OMP`, empty state `No jobs`.

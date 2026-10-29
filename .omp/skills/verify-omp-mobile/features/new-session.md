@@ -21,14 +21,14 @@ Preconditions: app paired to this run's server; the run's `config.json` restrict
 - **Browse + approve:**
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/new-session -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/new-session-approve.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/new-session -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/new-session-approve.yaml
   ```
 
   The flow browses to `project`, sends `Run bash: echo <TOKEN>. Then reply with the single word done.`, waits for `Allow tool: .*`, taps `Approve`, waits for `done` and the composer's `Send`, then expands the only tool card and asserts `OUTPUT, <TOKEN>`. Screenshots: `new-01-folder-browser` … `new-05-tool-output`.
 - **Recent project:**
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/recent -e MACHINE_NAME=<MACHINE_NAME> -e 'PROJECT=<regex-escaped PROJECT path>' -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/new-session-recent.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/recent -e MACHINE_NAME=<MACHINE_NAME> -e 'PROJECT=<regex-escaped PROJECT path>' -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/new-session-recent.yaml
   ```
 
   `recent-01-project-selected` shows the `project` row with its path and session count; `recent-02-session-created` shows the transcript with the reply. This session is the starting point for `live-session-interactions.md`.

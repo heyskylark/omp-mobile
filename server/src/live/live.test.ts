@@ -15,7 +15,8 @@ import { publicLiveness, reduceOwnership, type OwnershipState } from "./state.ts
 import { AgentCatalog, locateAgent } from "../history/agents.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { ImageStore } from "../history/images.ts";
-import type { ServerMessage, TimelineItem } from "@omp-mobile/protocol";
+import type { AgentDefinition, ServerMessage, TimelineItem } from "@omp-mobile/protocol";
+import { UnknownAgentError } from "../agents/store.ts";
 import { createLiveHub } from "./index.ts";
 import { sessionHolder } from "./lease.ts";
 
@@ -64,6 +65,8 @@ describe("ownership reducer", () => {
 		expect(reduceOwnership(found, { type: "terminal.released", pid: 9 })).toEqual({ kind: "idle" });
 	});
 });
+
+const noAgents = { get: async () => null };
 
 function stubHistory(sessions: SessionMeta[] = []): History {
 	const agents = new AgentCatalog();
@@ -117,6 +120,7 @@ test("terminal session_start creates ownership before history catalog catches up
 		history: stubHistory(),
 		ompPath: "omp",
 		relayPort: 0,
+		agents: noAgents,
 		extensionPath: "/tmp/extension.ts",
 	});
 	hub.ingest({ event: "session_start", sessionId: "new-terminal", cwd: "/tmp/project", pid: process.pid, mode: "tui" });
@@ -155,7 +159,13 @@ describe("task agents", () => {
 	test("a task agent's own OMP session never becomes a session", async () => {
 		const { dir, agentFile } = await layout();
 		await writeFile(agentFile("Alpha"), header("alpha"));
-		const hub = createLiveHub({ history: stubHistory(), ompPath: "omp", relayPort: 0, extensionPath: "/tmp/e.ts" });
+		const hub = createLiveHub({
+			history: stubHistory(),
+			agents: noAgents,
+			ompPath: "omp",
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+		});
 		try {
 			const start = { event: "session_start" as const, cwd: "/tmp/project", pid: process.pid };
 			hub.ingest({ ...start, sessionId: "alpha", sessionFile: agentFile("Alpha"), mode: "print" });
@@ -189,6 +199,7 @@ describe("task agents", () => {
 			history: stubHistory([session]),
 			ompPath: "omp",
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 		});
 		try {
@@ -248,6 +259,7 @@ for await (const line of console) {
 			history: stubHistory(),
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 			settleGraceMs,
 		});
@@ -286,6 +298,7 @@ for await (const line of console) {
 			},
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/extension.ts",
 			settleGraceMs: 60_000,
 		});
@@ -337,6 +350,7 @@ for await (const line of console) {
 			history: stubHistory(),
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 			settleGraceMs: 60_000,
 		});
@@ -362,6 +376,69 @@ for await (const line of console) {
 		}
 	});
 
+	test("starts an agent's session with its model, thinking level, and snapshot, ignoring the phone's role", async () => {
+		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
+		const ompPath = join(dir, "omp");
+		const startup = [
+			'require("node:fs").writeFileSync("start.json", JSON.stringify({ argv: process.argv.slice(2), agent: process.env.OMP_MOBILE_AGENT }));',
+			'out({ type: "ready" });',
+		].join("\n");
+		const logPrompts = [
+			'\tif (command.type === "prompt") require("node:fs").appendFileSync("prompts.log", command.message + "\\n");',
+			'\tif (command.type === "get_state")',
+		].join("\n");
+		await writeFile(
+			ompPath,
+			fakeOmp.replace('out({ type: "ready" });', startup).replace('\tif (command.type === "get_state")', logPrompts),
+			{ mode: 0o755 },
+		);
+		const reviewer: AgentDefinition = {
+			name: "reviewer",
+			description: "Reviews code",
+			tools: ["read", "grep"],
+			model: "@slow, @default",
+			thinkingLevel: "high",
+			prompt: "Review only.",
+			structured: false,
+		};
+		const hub = createLiveHub({
+			history: stubHistory(),
+			ompPath,
+			relayPort: 0,
+			agents: { get: async (name) => (name === "reviewer" ? reviewer : null) },
+			extensionPath: "/tmp/e.ts",
+			rpcArgs: ["--model", "openai/gpt"],
+			settleGraceMs: 60_000,
+		});
+		try {
+			await expect(
+				hub.createSession({ cwd: dir, prompt: "first", operationId: "op-0", agent: "missing" }),
+			).rejects.toBeInstanceOf(UnknownAgentError);
+			const { sessionId } = await hub.createSession({
+				cwd: dir,
+				prompt: "first",
+				operationId: "op-1",
+				modelRole: "smol",
+				agent: "reviewer",
+			});
+			const start = (await Bun.file(join(dir, "start.json")).json()) as { argv: string[]; agent: string };
+			expect(start.argv.slice(-6)).toEqual(["--model", "openai/gpt", "--model", "@slow", "--thinking", "high"]);
+			expect(JSON.parse(start.agent)).toEqual({
+				name: "reviewer",
+				tools: ["read", "grep"],
+				prompt: "Review only.",
+				model: "@slow, @default",
+				thinkingLevel: "high",
+			});
+			expect((await hub.snapshot(sessionId, 40))?.session.agent).toBe("reviewer");
+			await until(async () => await Bun.file(join(dir, "prompts.log")).exists(), "the first prompt");
+			expect(await Bun.file(join(dir, "prompts.log")).text()).toBe("first\n");
+		} finally {
+			await hub.stop();
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	test("shows a running turn's inline tool image before OMP saves it, and serves its bytes", async () => {
 		const dir = await realpath(await mkdtemp(join(tmpdir(), "omp-mobile-fake-omp-")));
 		const ompPath = join(dir, "omp");
@@ -373,7 +450,14 @@ for await (const line of console) {
 		const result = `[{ type: "text", text: "ok" }, { type: "image", mimeType: "image/png", data: "${data}" }]`;
 		await writeFile(ompPath, fakeOmp.replace(`[{ type: "text", text: "ok" }]`, result), { mode: 0o755 });
 		const history = stubHistory();
-		const hub = createLiveHub({ history, ompPath, relayPort: 0, extensionPath: "/tmp/e.ts", settleGraceMs: 60_000 });
+		const hub = createLiveHub({
+			history,
+			agents: noAgents,
+			ompPath,
+			relayPort: 0,
+			extensionPath: "/tmp/e.ts",
+			settleGraceMs: 60_000,
+		});
 		try {
 			const { sessionId } = await hub.createSession({ cwd: dir, prompt: "first", operationId: "op-1" });
 			const ready = () => {
@@ -419,6 +503,7 @@ for await (const line of console) {
 			history: stubHistory(),
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 			settleGraceMs: 60_000,
 		});
@@ -470,6 +555,7 @@ for await (const line of console) {
 			history: stubHistory([session]),
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 			settleGraceMs: 60_000,
 		});
@@ -534,6 +620,7 @@ for await (const line of console) {
 			},
 			ompPath,
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/e.ts",
 			settleGraceMs: 60_000,
 		});
@@ -577,6 +664,7 @@ describe("session_title from the extension", () => {
 			]),
 			ompPath: "omp",
 			relayPort: 0,
+			agents: noAgents,
 			extensionPath: "/tmp/extension.ts",
 		});
 		const broadcasts: ServerMessage[] = [];

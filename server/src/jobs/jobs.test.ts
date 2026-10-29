@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { CreateSessionRequest, Liveness, PromptRequest } from "@omp-mobile/protocol";
 import type { SessionMeta } from "../history/api.ts";
 import { createJobService, createJobStore, type JobService, type JobStore } from "./index.ts";
+import { Database } from "bun:sqlite";
 
 const meta = (id: string): SessionMeta => ({
 	id,
@@ -50,7 +51,7 @@ let store: JobStore;
 let service: JobService;
 let world: World;
 
-async function setup() {
+async function setup(agent?: string) {
 	directory = await mkdtemp(join(tmpdir(), "omp-mobile-jobs-"));
 	store = createJobStore(join(directory, "jobs.db"));
 	world = new World();
@@ -61,6 +62,7 @@ async function setup() {
 		schedule: "0 9 * * *",
 		sessionId: "s1",
 		cwd: "/tmp/project",
+		...(agent ? { agent } : {}),
 	});
 }
 
@@ -110,6 +112,36 @@ describe("scheduled jobs", () => {
 		await service.run(job.id);
 		expect(world.created).toHaveLength(1);
 		expect(world.prompts.map((prompt) => prompt.sessionId)).toEqual(["new-1"]);
+	});
+
+	test("a replacement session starts as the deleted session's agent, and the job keeps it", async () => {
+		const job = await setup("reviewer");
+		expect(job.agent).toBe("reviewer");
+		world.files.clear();
+		await service.run(job.id);
+		expect(world.created).toMatchObject([{ cwd: "/tmp/project", agent: "reviewer" }]);
+		expect(service.list()[0]).toMatchObject({ sessionId: "new-1", agent: "reviewer" });
+	});
+
+	test("a database from before jobs kept agents gains the column and keeps its jobs", async () => {
+		directory = await mkdtemp(join(tmpdir(), "omp-mobile-jobs-"));
+		const path = join(directory, "jobs.db");
+		const old = new Database(path, { create: true });
+		old.run(
+			`CREATE TABLE jobs (id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
+			 error_message TEXT, session_id TEXT NOT NULL, cwd TEXT NOT NULL, schedule TEXT NOT NULL,
+			 created_at TEXT NOT NULL, last_run_at TEXT)`,
+		);
+		old.run(
+			"INSERT INTO jobs VALUES ('j1', 'Digest', 'Summarize', 'ACTIVE', NULL, 's1', '/tmp/project', '0 9 * * *', '2026-01-01T00:00:00.000Z', NULL)",
+		);
+		old.close();
+		store = createJobStore(path);
+		world = new World();
+		service = createJobService({ store, hub: world.hub, history: world.history });
+		expect(service.list().map((job) => [job.id, job.agent])).toEqual([["j1", undefined]]);
+		const created = await service.create({ ...store.get("j1")!, agent: "reviewer" });
+		expect(created.agent).toBe("reviewer");
 	});
 
 	test("a failed run reports ERROR with the reason, keeps its schedule, and the next good run clears it", async () => {

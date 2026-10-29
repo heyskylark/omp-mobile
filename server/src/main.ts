@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { AgentStore } from "./agents/store.ts";
+import { ToolCatalog } from "./agents/tools.ts";
 import { createBrowserService } from "./browser/index.ts";
 import { loadConfig } from "./config.ts";
 import { loadMachineId } from "./machine-id.ts";
@@ -34,16 +36,19 @@ async function main(): Promise<void> {
 	const machineId = await loadMachineId(config.dataDir, { paired: devices.list().length > 0 });
 	const pins = createPinStore(join(config.dataDir, "pins.json"));
 	await pins.load();
+	const ompAgentDir = join(homedir(), ".omp", "agent");
 	const history = createHistory({
-		sessionsDir: join(homedir(), ".omp", "agent", "sessions"),
-		blobsDir: join(homedir(), ".omp", "agent", "blobs"),
+		sessionsDir: join(ompAgentDir, "sessions"),
+		blobsDir: join(ompAgentDir, "blobs"),
 		roots: config.roots,
 		cursorSecret: randomBytes(32),
 	});
+	const agents = new AgentStore(join(ompAgentDir, "agents"));
 	if (!config.ompPath) console.warn("omp executable not found; live actions are unavailable");
 	const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 	const hub = createLiveHub({
 		history,
+		agents,
 		ompPath: config.ompPath ?? "omp",
 		relayPort: config.relayPort,
 		extensionPath: join(root, "extension", "omp-mobile.ts"),
@@ -71,6 +76,8 @@ async function main(): Promise<void> {
 			extensionToken,
 			jobs,
 			pins,
+			agents,
+			tools: new ToolCatalog(config.ompPath ?? "omp"),
 		});
 		if (config.apns) push = createPushService(config.apns, machineId, devices, hub);
 		await writePrivateJson(serverPath, {

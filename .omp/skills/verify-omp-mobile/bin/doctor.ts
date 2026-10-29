@@ -136,6 +136,30 @@ if (checkSim) {
 
 const maestro = run(["maestro", "--version"]);
 if (maestro) maestro.code === 0 ? ok(`maestro ${maestro.out.split("\n").pop()}`) : fail(`maestro: ${maestro.err}`);
+if (maestro?.code === 0) {
+	// Maestro probes localhost:5555-5585 for Android emulators before any iOS command and hangs on a non-ADB listener;
+	// run.env's MAESTRO_OPTS resolves localhost to ::1 only, so IPv4-only listeners refuse the probe.
+	if (!env.MAESTRO_OPTS) {
+		fail(`run.env has no MAESTRO_OPTS; run cleanup.sh ${runId}, then prepare-run.sh with a new run id`);
+	} else {
+		const list = Bun.spawnSync(["maestro", "list-devices"], {
+			env: { ...process.env, MAESTRO_OPTS: env.MAESTRO_OPTS },
+			stdout: "pipe",
+			stderr: "pipe",
+			timeout: 30_000,
+		});
+		if (list.exitCode === 0) {
+			ok(`maestro list-devices with MAESTRO_OPTS=${env.MAESTRO_OPTS}`);
+		} else {
+			const result = list.exitedDueToTimeout ? "hung for 30s" : `exited ${list.exitCode}: ${list.stderr.toString().trim()}`;
+			const listeners = run(["lsof", "-nP", "-iTCP:5555-5585", "-sTCP:LISTEN"])?.out.split("\n").slice(1) ?? [];
+			fail(
+				`MAESTRO_OPTS=${env.MAESTRO_OPTS} maestro list-devices ${result}; listeners on Android emulator ports 5555-5585: ` +
+					`[${listeners.join("; ")}]; use run.env's MAESTRO_OPTS from prepare-run.sh, or quit a non-adb listener on ::1`,
+			);
+		}
+	}
+}
 const java = run(["java", "-version"]);
 if (java && java.code !== 0) {
 	fail(`java -version: ${java.err} (${installHints.java})`);

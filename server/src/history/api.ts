@@ -19,6 +19,8 @@ export interface SessionMeta {
 	updatedAt: string;
 	status: SessionStatus;
 	preview?: string;
+	/** Agent the session was started as, from the OMP Mobile extension's `omp-mobile-agent` entry. */
+	agent?: string;
 }
 
 export interface SessionMetaPage {

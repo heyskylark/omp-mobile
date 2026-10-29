@@ -27,7 +27,7 @@ Run from the checkout under test (a feature worktree per `.omp/AGENTS.md`). In a
    .omp/skills/verify-omp-mobile/bin/prepare-run.sh "$RUN_ID"          # optional 2nd arg: base port
    ```
 
-   It prints `run.env` (`PORT`, `OMP_MOBILE_HOME`, `PROJECT`, `EVIDENCE`, `MACHINE_NAME=omp-verify-$RUN_ID`, …) stored at `~/.cache/omp-mobile-verify/$RUN_ID/run.env`. Write down the printed values; later commands use them literally.
+   It prints `run.env` (`PORT`, `OMP_MOBILE_HOME`, `PROJECT`, `EVIDENCE`, `MACHINE_NAME=omp-verify-$RUN_ID`, `MAESTRO_OPTS`, …) stored at `~/.cache/omp-mobile-verify/$RUN_ID/run.env`. Write down the printed values; later commands use them literally.
 
 2. Start the server as a supervised long-lived process (OMP `bash` with `name` + `ready`; never `&`/`nohup`):
 
@@ -61,21 +61,23 @@ Read-only. Run before the first drive and after any surprising failure:
 .omp/skills/verify-omp-mobile/bin/doctor.ts "$RUN_ID"                  # --no-sim before step 3 of Launch
 ```
 
-Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's, `Booted`, and on an iOS 26.x runtime; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro works and `java` is 17+ (checked with `--no-sim` too). A `FAIL` names the fix.
+Every line must be `ok`. It proves: `omp --version`; `server.json` pid is the listener on the run port; `GET /admin/status` answers with this run's machine name and a non-null `ompVersion`; paired devices/live counts/problems; the simulator is this run's, `Booted`, and on an iOS 26.x runtime; the app is installed with an embedded `main.jsbundle` newer than every file in `app/src` and `packages/protocol/src` (else rebuild); Maestro works, `maestro list-devices` with the run's `MAESTRO_OPTS` finishes within 30 s, and `java` is 17+ (checked with `--no-sim` too). A `FAIL` names the fix.
 
 ## Drive
 
-Harness: Maestro CLI flows shipped in `.omp/skills/verify-omp-mobile/flows/`, always with the explicit device and a per-flow output dir inside the evidence root:
+Harness: Maestro CLI flows shipped in `.omp/skills/verify-omp-mobile/flows/`, always with the run's `MAESTRO_OPTS`, the explicit device, and a per-flow output dir inside the evidence root:
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/<flow> -e KEY=value … .omp/skills/verify-omp-mobile/flows/<flow>.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/<flow> -e KEY=value … .omp/skills/verify-omp-mobile/flows/<flow>.yaml
 ```
+
+`MAESTRO_OPTS` (from `run.env`) points the JVM at `<SCRATCH>/maestro-hosts`, which resolves `localhost` to `::1` only. Maestro probes `localhost:5555-5585` for Android emulators before every command, even on iOS, and hangs forever if a non-adb process listens there on IPv4 (e.g. Native Instruments' `NTKDaemon` on `127.0.0.1:5563`); over `::1` the probe is refused at once. Never drop the prefix.
 
 - Pair first (every fresh simulator) through the deep link — the same `ompmobile://pair` link the QR code encodes. It needs no clipboard and answers iOS's `Open in “OMP”?` and notification-permission prompts:
 
   ```sh
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> pair-link
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/deeplink -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-deeplink.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/deeplink -e 'PAIR_LINK=<link>' -e MACHINE_NAME=<MACHINE_NAME> .omp/skills/verify-omp-mobile/flows/pair-deeplink.yaml
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> status > <EVIDENCE>/pair-admin-status.json
   ```
 
@@ -86,7 +88,7 @@ maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/<flow> -e 
 - Inspect the live screen when a selector misses:
 
   ```sh
-  maestro --device <SIM_UDID> hierarchy | .omp/skills/verify-omp-mobile/bin/texts.ts
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> hierarchy | .omp/skills/verify-omp-mobile/bin/texts.ts
   .omp/skills/verify-omp-mobile/bin/texts.ts <EVIDENCE>/maestro/<flow>/<ts>/<flow>/screen-hierarchy/<step>.json
   ```
 
@@ -126,7 +128,7 @@ All in `.omp/skills/verify-omp-mobile/bin/`, executable, invoked exactly as abov
 
 | Helper | Does |
 |---|---|
-| `prepare-run.sh <run-id> [port]` | scratch home/config/project, `collab.yml`, evidence root, `run.env` |
+| `prepare-run.sh <run-id> [port]` | scratch home/config/project, `collab.yml`, `maestro-hosts`, evidence root, `run.env` |
 | `sim-create.sh <run-id> [device type]` | create + boot `omp-verify-<run-id>` on the newest iOS 26.x runtime, record `SIM_UDID` |
 | `doctor.ts <run-id> [--no-sim]` | read-only readiness check |
 | `api.ts <run-id> pair-link \| status \| get </v1/…>` | one-time pairing link; admin status; probe-device GETs |

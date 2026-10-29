@@ -46,6 +46,8 @@ export interface SessionSummary {
 	pendingCount: number;
 	/** When the session was pinned on this computer; only `GET /v1/sessions` sets it. */
 	pinnedAt?: ISODate;
+	/** Agent the session was started as (an `AgentDefinition` name); absent for OMP's default setup. */
+	agent?: string;
 }
 
 /**
@@ -184,6 +186,51 @@ export const MODEL_ROLES = ["smol", "default", "slow"] as const;
 
 export type ModelRole = (typeof MODEL_ROLES)[number];
 
+/** OMP thinking levels an agent may pin, lightest first; `auto` lets OMP choose per turn. */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;
+
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/** Agent names are file stems in `~/.omp/agent/agents/<name>.md`. */
+export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/**
+ * The editable fields of an agent definition: OMP's own agent file (`~/.omp/agent/agents/<name>.md`), which also
+ * serves the computer's `task` subagents. Frontmatter keys this type does not model (`spawns`, `output`, …) are kept
+ * when the server rewrites the file.
+ */
+export interface AgentInput {
+	description: string;
+	/** Tool names the agent's sessions may call; omitted means OMP's default tool set. */
+	tools?: string[];
+	/** OMP model pattern or role reference such as `@smol`; omitted means the session's default model. */
+	model?: string;
+	thinkingLevel?: ThinkingLevel;
+	/** Skills loaded into every session of the agent. */
+	autoloadSkills?: string[];
+	/** Instructions appended after OMP's base system prompt. */
+	prompt: string;
+}
+
+export interface AgentDefinition extends AgentInput {
+	name: string;
+	/**
+	 * Declares an `output:` schema, so it is a `task` subagent that returns structured results to a parent agent.
+	 * The new-session picker hides these; they still show in agent management.
+	 */
+	structured: boolean;
+}
+
+/**
+ * Response of `GET /v1/agents`, sorted by name. `PUT /v1/agents/:name` takes `AgentInput` and returns the saved
+ * `AgentDefinition` (201 when created); `DELETE /v1/agents/:name` returns 204.
+ */
+export interface AgentListResponse {
+	items: AgentDefinition[];
+	/** Tool names the computer's OMP offers, for the agent editor. */
+	tools: string[];
+}
+
 export interface SessionSnapshot {
 	session: SessionSummary;
 	items: TimelineItem[];
@@ -256,10 +303,12 @@ export interface CreateSessionRequest {
 	cwd: string;
 	prompt: string;
 	images?: ImageAttachment[];
-	/** Model role for the first turn. Omitted means OMP's default role. */
+	/** Model role for the first turn. Omitted means OMP's default role. An agent's own `model` takes precedence. */
 	modelRole?: ModelRole;
 	/** Starts the session with OMP's advisor on. Omitted means off. */
 	advisor?: boolean;
+	/** Starts the session as this agent, fixed for the session's lifetime. Omitted means OMP's default setup. */
+	agent?: string;
 }
 
 export interface PromptRequest {
@@ -344,6 +393,8 @@ export type Job = {
 	description: string;
 	/** Session the job prompts; replaced by a new session in the same folder when this one is deleted. */
 	sessionId: string;
+	/** Agent of the job's session, which a replacement session is started as too. */
+	agent?: string;
 	/** Five-field cron expression (`minute hour day month weekday`) or nickname, in the computer's local time. */
 	schedule: string;
 	createdAt: ISODate;

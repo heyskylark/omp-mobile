@@ -24,8 +24,8 @@ Images show in the transcript as OMP's terminal shows them. An image block in a 
 2. Open the session by title search, scroll to the image, open and close the viewer:
 
    ```sh
-   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/images-tool -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<search words>' -e 'SESSION_TITLE=<escaped title>' -e 'IMAGE_LABEL=Image from read' -e PREFIX=images-tool .omp/skills/verify-omp-mobile/flows/chat-images.yaml
-   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/images-user -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<search words>' -e 'SESSION_TITLE=<escaped title>' -e IMAGE_LABEL=Image -e PREFIX=images-user .omp/skills/verify-omp-mobile/flows/chat-images.yaml
+   MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/images-tool -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<search words>' -e 'SESSION_TITLE=<escaped title>' -e 'IMAGE_LABEL=Image from read' -e PREFIX=images-tool .omp/skills/verify-omp-mobile/flows/chat-images.yaml
+   MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/images-user -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<search words>' -e 'SESSION_TITLE=<escaped title>' -e IMAGE_LABEL=Image -e PREFIX=images-user .omp/skills/verify-omp-mobile/flows/chat-images.yaml
    ```
 
    Pass: `<PREFIX>-01-inline` shows the picture at its own aspect ratio, inside the bubble or under the tool header; `<PREFIX>-02-viewer` shows it full screen on black with `Close` at the top left; `<PREFIX>-03-closed` is the transcript again.

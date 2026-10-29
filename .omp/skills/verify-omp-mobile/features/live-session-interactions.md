@@ -28,14 +28,14 @@ Preconditions: app paired; the transcript of a server-managed session is open, e
 - **Deny → question → stop → hand off** (several small model turns, one flow):
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/live -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/live-interactions.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/live -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/live-interactions.yaml
   ```
 
   Screenshots `live-01-approval-pending` … `live-08-handed-off`. Second observation: `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=80'` must show the denied `bash` item `failed`, an `ask` item `succeeded` with `User selected: Blue`, the story turn with no text (aborted), `pending: []`, and `liveness.kind: "idle"`.
 - **Outgoing messages, failure, and retry** (three small model turns, one server restart):
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/optimistic -e MACHINE_NAME=<MACHINE_NAME> -e 'PROJECT=<regex-escaped PROJECT path>' -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/optimistic-send.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/optimistic -e MACHINE_NAME=<MACHINE_NAME> -e 'PROJECT=<regex-escaped PROJECT path>' -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/optimistic-send.yaml
   ```
 
   Then `write proc://omp-mobile-verify-server-<RUN_ID>/kill`, run `optimistic-recover.yaml` with `-e PHASE=offline -e TOKEN=<another-word>`, start the server again as in Launch step 2, and run `optimistic-recover.yaml` with `-e PHASE=online` and the same `TOKEN`. Stopping the server ends its OMP process with the steer still queued, so the steer reads `Not delivered` once the phone sees the session idle. Screenshots `optimistic-01-after-send` … `optimistic-03-steer-queued` and `recover-01-not-sent` … `recover-04-delivered`. Second observation: `api.ts <RUN_ID> get '/v1/sessions/<id>?limit=80'` holds each user message exactly once: the first prompt, `Also say the word pelican.`, and `Reply with the single word <TOKEN>.`. Maestro settles the screen before each step, so it misses the first prompt's own bubble, which lasts until OMP records the prompt with the first reply. To see it, record the screen with `xcrun simctl io <SIM_UDID> recordVideo <EVIDENCE>/optimistic.mp4` during the first flow.
@@ -48,8 +48,8 @@ Preconditions: app paired; the transcript of a server-managed session is open, e
   `api.ts <RUN_ID> get '/v1/sessions?limit=20'` lists it with `project.path == <PROJECT>`, title `New session`, and `liveness: {"kind":"terminal"}`. Then:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal-open -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=New session' .omp/skills/verify-omp-mobile/flows/open-session.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/prompt-approve.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal-open -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=New session' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/terminal -e TOKEN=<unique-word> .omp/skills/verify-omp-mobile/flows/prompt-approve.yaml
   ```
 
   `read proc://omp-mobile-verify-tui-<RUN_ID>` shows `«omp-mobile» ›`, the phone's prompt, the approved command's output, and `<TOKEN>-done`; the snapshot's newest `bash` item output starts with `<TOKEN>`. Stop it with `write proc://omp-mobile-verify-tui-<RUN_ID>/kill` before cleanup.

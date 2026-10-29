@@ -2,12 +2,16 @@ import { randomBytes } from "node:crypto";
 import { basename } from "node:path";
 import { z } from "zod";
 import {
+	AGENT_NAME_PATTERN,
 	BROWSER_KEYS,
 	MAX_MACHINE_NAME_LENGTH,
 	MAX_PINNED_SESSIONS,
 	MAX_PROMPT_IMAGES,
 	MODEL_ROLES,
 	PROTOCOL_VERSION,
+	THINKING_LEVELS,
+	type AgentDefinition,
+	type AgentListResponse,
 	type AdvisorResponse,
 	type ModelRoleResponse,
 	type PinResponse,
@@ -24,6 +28,8 @@ import {
 	type SkillListResponse,
 	type JobListResponse,
 } from "@omp-mobile/protocol";
+import { UnknownAgentError, type AgentStore } from "../agents/store.ts";
+import type { ToolCatalog } from "../agents/tools.ts";
 import type { BrowserService, BrowserViewer } from "../browser/index.ts";
 import { saveMachineName, type ServerConfig } from "../config.ts";
 import type { History, SessionMeta } from "../history/api.ts";
@@ -60,6 +66,28 @@ const CreateSessionSchema = z.object({
 	images: ImagesSchema,
 	modelRole: z.enum(MODEL_ROLES).optional(),
 	advisor: z.boolean().optional(),
+	agent: z.string().regex(AGENT_NAME_PATTERN, "Invalid agent name").optional(),
+});
+/** One tool or skill name; OMP reads these lists as comma-separated, so names cannot contain commas. */
+const ListItemSchema = z
+	.string()
+	.trim()
+	.min(1)
+	.max(200)
+	.regex(/^[^,\s]+$/, "Names cannot contain commas or spaces");
+const AgentInputSchema = z.object({
+	description: z.string().trim().min(1).max(10_000),
+	tools: z.array(ListItemSchema).max(200).optional(),
+	model: z
+		.string()
+		.trim()
+		.min(1)
+		.max(500)
+		.regex(/^[^\r\n]+$/, "The model must be one line")
+		.optional(),
+	thinkingLevel: z.enum(THINKING_LEVELS).optional(),
+	autoloadSkills: z.array(ListItemSchema).max(100).optional(),
+	prompt: z.string().max(200_000),
 });
 const PromptSchema = z.object({ operationId: z.string().min(1), text: z.string(), images: ImagesSchema });
 const ModelRoleSchema = z.object({ role: z.enum(MODEL_ROLES) });
@@ -115,6 +143,7 @@ const NewJobSchema = z.object({
 	schedule: z.string().trim().min(1).max(200),
 	sessionId: z.string().min(1).max(500),
 	cwd: z.string().min(1),
+	agent: z.string().regex(AGENT_NAME_PATTERN).optional(),
 });
 const UpdateJobSchema = z.object({ status: z.enum(["ACTIVE", "PAUSED"]) });
 const ClientMessageSchema = z.discriminatedUnion("type", [
@@ -173,6 +202,8 @@ export interface HttpOptions {
 	extensionToken: string;
 	jobs: JobService;
 	pins: PinStore;
+	agents: AgentStore;
+	tools: Pick<ToolCatalog, "list">;
 	serverVersion?: string;
 }
 
@@ -208,7 +239,7 @@ function errorResponse(error: unknown): Response {
 		return json({ code: "forbidden", message: error.message } satisfies ApiError, 403);
 	if (error instanceof InvalidHistoryCursorError)
 		return json({ code: "invalid_cursor", message: error.message } satisfies ApiError, 400);
-	if (error instanceof InvalidScheduleError)
+	if (error instanceof InvalidScheduleError || error instanceof UnknownAgentError)
 		return json({ code: "bad_request", message: error.message } satisfies ApiError, 400);
 	if (error instanceof PinLimitError) return json({ code: "conflict", message: error.message } satisfies ApiError, 409);
 	console.error(error);
@@ -254,6 +285,7 @@ function summary(meta: SessionMeta, hub: LiveHub): SessionSummary {
 		liveness: overlay.liveness,
 		...(meta.preview ? { preview: meta.preview } : {}),
 		pendingCount: overlay.pendingCount,
+		...(meta.agent ? { agent: meta.agent } : {}),
 	};
 }
 
@@ -487,6 +519,26 @@ export function createHttpHandler(
 				const job = options.jobs.setStatus(id, UpdateJobSchema.parse(await body(req)).status);
 				if (!job) throw new HttpError(404, "not_found", "Job not found");
 				return json(job);
+			}
+			if (path === "/v1/agents" && req.method === "GET") {
+				const [items, tools] = await Promise.all([options.agents.list(), options.tools.list()]);
+				return json({ items, tools } satisfies AgentListResponse);
+			}
+			const definitionMatch = path.match(/^\/v1\/agents\/([^/]+)$/);
+			if (definitionMatch && (req.method === "PUT" || req.method === "DELETE")) {
+				const name = parsePathParam(definitionMatch[1]!);
+				if (!AGENT_NAME_PATTERN.test(name))
+					throw new HttpError(
+						400,
+						"bad_request",
+						"Agent names are up to 64 lowercase letters, digits, and hyphens, starting with a letter or digit",
+					);
+				if (req.method === "DELETE") {
+					if (!(await options.agents.remove(name))) throw new HttpError(404, "not_found", "Agent not found");
+					return new Response(null, { status: 204 });
+				}
+				const { agent, created } = await options.agents.put(name, AgentInputSchema.parse(await body(req)));
+				return json(agent satisfies AgentDefinition, created ? 201 : 200);
 			}
 			const agentMatch = path.match(/^\/v1\/sessions\/([^/]+)\/agents\/([^/]+)(\/items)?$/);
 			if (agentMatch && req.method === "GET") {
