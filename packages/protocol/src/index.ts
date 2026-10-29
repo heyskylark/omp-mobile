@@ -44,13 +44,29 @@ export interface SessionSummary {
 	liveness: Liveness;
 	preview?: string;
 	pendingCount: number;
+	/** When the session was pinned on this computer; only `GET /v1/sessions` sets it. */
+	pinnedAt?: ISODate;
 	/** Agent the session was started as (an `AgentDefinition` name); absent for OMP's default setup. */
 	agent?: string;
 }
 
+/**
+ * Without a search query, page 1 starts with the pinned sessions in the requested project, earliest pinned first,
+ * and no page repeats them. A search ranks pinned sessions like any other.
+ */
 export interface SessionListPage {
 	items: SessionSummary[];
 	nextCursor?: string;
+}
+
+export const MAX_PINNED_SESSIONS = 5;
+
+/**
+ * Response of `PUT /v1/sessions/:id/pin`; pinning again keeps the original time. A computer holds at most
+ * `MAX_PINNED_SESSIONS` pins and answers `conflict` beyond that. `DELETE /v1/sessions/:id/pin` unpins (204).
+ */
+export interface PinResponse {
+	pinnedAt: ISODate;
 }
 
 /**

@@ -10,9 +10,11 @@ import {
 	View,
 } from "react-native";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import type { RecentProject, ServerMessage, SessionSummary } from "@omp-mobile/protocol";
 import { ErrorState, Icon, Loading } from "../../../components/ui";
 import { AgentBadge, groupSessions, LivenessBadge, relativeTime } from "../../../components/session-meta";
+import { useToast } from "../../../components/toast";
 import { OmpApi, OmpApiError } from "../../../data/api";
 import { acquireMachineSocket } from "../../../data/live";
 import { useMachine } from "../../../data/machines";
@@ -27,6 +29,8 @@ export default function SessionsScreen() {
 	const { machineId } = useLocalSearchParams<{ machineId: string }>();
 	const navigation = useNavigation();
 	const machine = useMachine(machineId);
+	const { show } = useToast();
+	const openRow = useRef<SwipeableMethods | null>(null);
 	const [items, setItems] = useState<SessionSummary[]>([]);
 	const [cursor, setCursor] = useState<string | undefined>();
 	const cursorRef = useRef<string | undefined>(undefined);
@@ -153,12 +157,22 @@ export default function SessionsScreen() {
 		return <ErrorState message={message} retry={() => void load()} />;
 	const open = (session: SessionSummary) =>
 		router.push({ pathname: "/machine/[machineId]/session/[sessionId]", params: { machineId, sessionId: session.id } });
+	const togglePin = async (session: SessionSummary) => {
+		try {
+			const api = new OmpApi(machine);
+			if (session.pinnedAt) await api.unpin(session.id);
+			else await api.pin(session.id);
+			await load();
+		} catch (error) {
+			show(error instanceof Error ? error.message : "Could not update the pin.", "error");
+		}
+	};
 	// Keep a selected project visible even after it drops out of the recent list.
 	const chips =
 		project && !projects.some((candidate) => candidate.path === project)
 			? [{ path: project, name: project.split("/").pop() || project }, ...projects]
 			: projects;
-	// A search lists results in the server's relevance order; otherwise sessions are grouped by day.
+	// A search lists results in the server's relevance order; otherwise pins lead and the rest is grouped by day.
 	const sections: { title: string; data: SessionSummary[] }[] = listFilter.query
 		? items.length
 			? [{ title: "", data: items }]
@@ -215,11 +229,12 @@ export default function SessionsScreen() {
 			<SectionList
 				className="flex-1 bg-ink"
 				sections={sections}
-				keyExtractor={(item) => item.id}
+				// A swipeable row whose pin flipped ignores its next swipe; a fresh row per pin state does not.
+				keyExtractor={(item) => `${item.id}:${item.pinnedAt ?? ""}`}
 				stickySectionHeadersEnabled={false}
 				keyboardDismissMode="on-drag"
 				keyboardShouldPersistTaps="handled"
-				contentContainerClassName="px-4 pb-10"
+				contentContainerClassName="pb-10"
 				refreshControl={
 					<RefreshControl
 						refreshing={refreshing}
@@ -240,34 +255,21 @@ export default function SessionsScreen() {
 				onEndReachedThreshold={0.4}
 				renderSectionHeader={({ section }) =>
 					section.title ? (
-						<Text className="pb-2 pt-5 text-[12px] font-semibold uppercase tracking-widest text-secondary">
+						<Text className="px-4 pb-2 pt-5 text-[12px] font-semibold uppercase tracking-widest text-secondary">
 							{section.title}
 						</Text>
 					) : null
 				}
 				renderItem={({ item }) => (
-					<Pressable onPress={() => open(item)} className="border-b border-border py-4">
-						<View className="flex-row items-start gap-3">
-							<View className="min-w-0 flex-1">
-								<Text numberOfLines={1} className="text-[16px] font-medium text-primary">
-									{item.title}
-								</Text>
-								<View className="mt-1 flex-row items-center gap-2">
-									<Text numberOfLines={1} className="max-w-[70%] text-caption text-secondary">
-										{item.project.name}
-									</Text>
-									<Text className="text-caption text-secondary">· {relativeTime(item.updatedAt)}</Text>
-									{item.agent ? <AgentBadge name={item.agent} size="small" /> : null}
-								</View>
-								{item.preview ? (
-									<Text numberOfLines={1} className="mt-1.5 text-caption text-secondary">
-										{item.preview}
-									</Text>
-								) : null}
-							</View>
-							<LivenessBadge session={item} />
-						</View>
-					</Pressable>
+					<SessionRow
+						session={item}
+						onOpen={(swipeable) => {
+							if (openRow.current && openRow.current !== swipeable) openRow.current.close();
+							openRow.current = swipeable;
+						}}
+						onPress={() => open(item)}
+						onTogglePin={() => togglePin(item)}
+					/>
 				)}
 				ListEmptyComponent={
 					state === "error" ? (
@@ -294,5 +296,78 @@ export default function SessionsScreen() {
 				ListFooterComponent={loadingMore ? <ActivityIndicator className="py-5" color="#8B93FF" /> : null}
 			/>
 		</View>
+	);
+}
+
+function SessionRow({
+	session,
+	onOpen,
+	onPress,
+	onTogglePin,
+}: {
+	session: SessionSummary;
+	onOpen(swipeable: SwipeableMethods): void;
+	onPress(): void;
+	onTogglePin(): Promise<void>;
+}) {
+	const swipeable = useRef<SwipeableMethods | null>(null);
+	const [busy, setBusy] = useState(false);
+	const pinned = Boolean(session.pinnedAt);
+	return (
+		<ReanimatedSwipeable
+			ref={swipeable}
+			friction={2}
+			rightThreshold={40}
+			overshootRight={false}
+			onSwipeableWillOpen={() => {
+				if (swipeable.current) onOpen(swipeable.current);
+			}}
+			renderRightActions={(_progress, _translation, methods) => (
+				<Pressable
+					accessibilityRole="button"
+					accessibilityLabel={pinned ? "Unpin" : "Pin"}
+					disabled={busy}
+					onPress={async () => {
+						methods.close();
+						setBusy(true);
+						try {
+							await onTogglePin();
+						} finally {
+							setBusy(false);
+						}
+					}}
+					className={`w-20 items-center justify-center gap-1 ${pinned ? "bg-warning" : "bg-accent"}`}
+				>
+					<Icon name={pinned ? "pin.slash.fill" : "pin.fill"} color="#FFFFFF" size={18} />
+					<Text className="text-[12px] font-semibold text-white">{pinned ? "Unpin" : "Pin"}</Text>
+				</Pressable>
+			)}
+		>
+			<Pressable onPress={onPress} className="bg-ink px-4">
+				<View className="flex-row items-start gap-3 border-b border-border py-4">
+					<View className="min-w-0 flex-1">
+						<View className="flex-row items-center gap-1.5">
+							<Text numberOfLines={1} className="shrink text-[16px] font-medium text-primary">
+								{session.title}
+							</Text>
+							{pinned ? <Icon name="pin.fill" color="#8B93FF" size={12} /> : null}
+						</View>
+						<View className="mt-1 flex-row items-center gap-2">
+							<Text numberOfLines={1} className="max-w-[70%] text-caption text-secondary">
+								{session.project.name}
+							</Text>
+							<Text className="text-caption text-secondary">· {relativeTime(session.updatedAt)}</Text>
+							{session.agent ? <AgentBadge name={session.agent} size="small" /> : null}
+						</View>
+						{session.preview ? (
+							<Text numberOfLines={1} className="mt-1.5 text-caption text-secondary">
+								{session.preview}
+							</Text>
+						) : null}
+					</View>
+					<LivenessBadge session={session} />
+				</View>
+			</Pressable>
+		</ReanimatedSwipeable>
 	);
 }

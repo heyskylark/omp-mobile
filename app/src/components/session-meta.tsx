@@ -64,19 +64,27 @@ export function relativeTime(value: string): string {
 	return days < 7 ? `${days}d` : new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export type SessionSection = { title: "Today" | "Yesterday" | "Earlier"; data: SessionSummary[] };
+export type SessionSection = { title: "Pinned" | "Today" | "Yesterday" | "Earlier"; data: SessionSummary[] };
 
+/** Pinned sessions first in the server's pin order, then the rest by day. */
 export function groupSessions(items: SessionSummary[]): SessionSection[] {
 	const start = new Date();
 	start.setHours(0, 0, 0, 0);
 	const yesterday = new Date(start);
 	yesterday.setDate(yesterday.getDate() - 1);
-	const groups: Record<SessionSection["title"], SessionSummary[]> = { Today: [], Yesterday: [], Earlier: [] };
+	const groups: Record<SessionSection["title"], SessionSummary[]> = {
+		Pinned: [],
+		Today: [],
+		Yesterday: [],
+		Earlier: [],
+	};
 	for (const item of items) {
 		const updated = new Date(item.updatedAt);
-		groups[updated >= start ? "Today" : updated >= yesterday ? "Yesterday" : "Earlier"].push(item);
+		groups[item.pinnedAt ? "Pinned" : updated >= start ? "Today" : updated >= yesterday ? "Yesterday" : "Earlier"].push(
+			item,
+		);
 	}
-	return (["Today", "Yesterday", "Earlier"] as const).flatMap((title) =>
+	return (["Pinned", "Today", "Yesterday", "Earlier"] as const).flatMap((title) =>
 		groups[title].length ? [{ title, data: groups[title] }] : [],
 	);
 }

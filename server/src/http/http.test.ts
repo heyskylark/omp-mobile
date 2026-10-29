@@ -10,7 +10,9 @@ import type {
 	BrowserServerMessage,
 	Job,
 	JobListResponse,
+	PinResponse,
 	ServerMessage,
+	SessionListPage,
 	SessionSnapshot,
 	SessionSummary,
 } from "@omp-mobile/protocol";
@@ -22,6 +24,7 @@ import { InvalidHistoryCursorError } from "../history/pager.ts";
 import { createJobService, createJobStore, type JobService, type JobStore } from "../jobs/index.ts";
 import type { ExtensionEvent, LiveHub, LiveNotification } from "../live/api.ts";
 import { createDeviceStore } from "../store/devices.ts";
+import { createPinStore } from "../store/pins.ts";
 import { createHttpHandler, startHttp, type HttpOptions, type HttpService } from "./index.ts";
 
 const meta = {
@@ -182,6 +185,9 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 	const devices = createDeviceStore(join(directory, "devices.json"));
 	await devices.load();
 	const hub = new FakeHub();
+	let clock = Date.parse("2026-02-01T00:00:00.000Z");
+	const pins = createPinStore(join(directory, "pins.json"), () => (clock += 1000));
+	await pins.load();
 	const store = createJobStore(join(directory, "jobs.db"));
 	jobs = { store, service: createJobService({ store, hub, history }) };
 	const options: HttpOptions = {
@@ -203,6 +209,7 @@ async function fixture(port = 19000 + Math.floor(Math.random() * 10000)) {
 		adminToken: "admin",
 		extensionToken: "extension",
 		jobs: jobs.service,
+		pins,
 		agents: new AgentStore(join(directory, "agents")),
 		tools: { list: async () => ["bash", "read"] },
 	};
@@ -681,5 +688,108 @@ describe("HTTP API", () => {
 		// Blobs that are not images, unknown hashes and anything that is not a hash stay private.
 		for (const name of ["b".repeat(64), "c".repeat(64), "..%2Fdevices.json"])
 			expect((await handler(new Request(`http://mac/v1/images/${name}`, { headers }))).status).toBe(404);
+	});
+
+	describe("pinned sessions", () => {
+		const session = (id: string, cwd = "/tmp/project") => ({ ...meta, id, file: `/tmp/${id}.jsonl`, cwd, title: id });
+		const sessions = new Map(
+			["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => [id, session(id, id === "g" ? "/tmp/other" : undefined)]),
+		);
+		const paged: History = {
+			...history,
+			async listSessions({ cursor, project }) {
+				const all = [...sessions.values()].filter((item) => !project || item.cwd === project);
+				const start = cursor ? Number(cursor) : 0;
+				const items = all.slice(start, start + 4);
+				return { items, ...(start + 4 < all.length ? { nextCursor: String(start + 4) } : {}) };
+			},
+			// `g` was moved by OMP: its continuation id still finds it under its first id.
+			async getSession(id) {
+				return sessions.get(id === "g-continued" ? "g" : id) ?? null;
+			},
+		};
+
+		async function pinFixture() {
+			const { options, token } = await fixture();
+			options.history = paged;
+			const handler = createHttpHandler(options, "app", () => "http://mac:8787");
+			const call = (method: string, path: string) =>
+				handler(new Request(`http://mac${path}`, { method, headers: { authorization: `Bearer ${token}` } }));
+			const list = async (query = "") => {
+				const page = (await (await call("GET", `/v1/sessions${query}`)).json()) as SessionListPage;
+				return page.items;
+			};
+			return { options, call, list };
+		}
+
+		test("lead page 1 earliest pinned first, are never repeated, and survive a restart", async () => {
+			const { options, call, list } = await pinFixture();
+			const first = await call("PUT", "/v1/sessions/g-continued/pin");
+			expect(first.status).toBe(200);
+			const { pinnedAt } = (await first.json()) as PinResponse;
+			expect((await call("PUT", "/v1/sessions/b/pin")).status).toBe(200);
+			// Pinning again keeps the original time, so the order does not change.
+			expect(await (await call("PUT", "/v1/sessions/g/pin")).json()).toEqual({ pinnedAt });
+
+			const page1 = await list();
+			expect(page1.map((item) => item.id)).toEqual(["g", "b", "a", "c", "d"]);
+			expect(page1[0]!.pinnedAt).toBe(pinnedAt);
+			expect(page1.filter((item) => item.pinnedAt).map((item) => item.id)).toEqual(["g", "b"]);
+			expect((await list("?cursor=4")).map((item) => item.id)).toEqual(["e", "f", "h"]);
+			expect((await list("?project=%2Ftmp%2Fproject")).map((item) => item.id)).toEqual(["b", "a", "c", "d"]);
+			// A search keeps relevance order and only marks the pins.
+			const found = await list("?q=b");
+			expect(found.map((item) => [item.id, Boolean(item.pinnedAt)])).toEqual([["b", true]]);
+
+			expect((await call("DELETE", "/v1/sessions/b/pin")).status).toBe(204);
+			expect((await list()).map((item) => item.id)).toEqual(["g", "a", "b", "c", "d"]);
+
+			const restarted = createPinStore(join(options.config.dataDir, "pins.json"));
+			await restarted.load();
+			expect(restarted.list()).toEqual([{ sessionId: "g", pinnedAt }]);
+		});
+
+		test("cap at five, but pins of sessions OMP no longer has free their slots", async () => {
+			const { call, list } = await pinFixture();
+			expect((await call("PUT", "/v1/sessions/missing/pin")).status).toBe(404);
+			for (const id of ["a", "b", "c", "d", "e"])
+				expect((await call("PUT", `/v1/sessions/${id}/pin`)).status).toBe(200);
+			const full = await call("PUT", "/v1/sessions/f/pin");
+			expect(full.status).toBe(409);
+			expect(await full.json()).toMatchObject({ code: "conflict" });
+
+			const removed = sessions.get("c")!;
+			sessions.delete("c");
+			try {
+				expect((await call("PUT", "/v1/sessions/f/pin")).status).toBe(200);
+				expect((await list()).slice(0, 5).map((item) => item.id)).toEqual(["a", "b", "d", "e", "f"]);
+			} finally {
+				sessions.set("c", removed);
+			}
+		});
+
+		test("tell every connected phone to refresh its list", async () => {
+			const { options, token } = await fixture();
+			options.history = paged;
+			service = await startHttp(options);
+			const ws = new WebSocket(`ws://127.0.0.1:${options.config.port}/v1/stream`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			const changed = Promise.withResolvers<void>();
+			const opened = Promise.withResolvers<void>();
+			ws.onmessage = (event) => {
+				const message = JSON.parse(String(event.data)) as ServerMessage;
+				if (message.type === "hello") opened.resolve();
+				if (message.type === "sessions.changed") changed.resolve();
+			};
+			ws.onerror = () => changed.reject(new Error("WebSocket failed"));
+			await opened.promise;
+			await fetch(`http://127.0.0.1:${options.config.port}/v1/sessions/a/pin`, {
+				method: "PUT",
+				headers: { authorization: `Bearer ${token}` },
+			});
+			await changed.promise;
+			ws.close();
+		});
 	});
 });

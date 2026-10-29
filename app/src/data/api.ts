@@ -17,6 +17,7 @@ import type {
 	ModelRoleResponse,
 	PairRequest,
 	PairResponse,
+	PinResponse,
 	PromptRequest,
 	RecentProject,
 	RespondRequest,
@@ -201,6 +202,18 @@ export class OmpApi {
 			{ method: "POST", body: JSON.stringify(body) },
 			typed<AdvisorResponse>("advisor", ["advisor"]),
 		);
+	}
+
+	pin(sessionId: string): Promise<PinResponse> {
+		return this.request(
+			`/v1/sessions/${encodeURIComponent(sessionId)}/pin`,
+			{ method: "PUT" },
+			typed<PinResponse>("pin", ["pinnedAt"]),
+		);
+	}
+
+	unpin(sessionId: string): Promise<void> {
+		return this.request(`/v1/sessions/${encodeURIComponent(sessionId)}/pin`, { method: "DELETE" }, () => undefined);
 	}
 
 	handoff(sessionId: string) {
