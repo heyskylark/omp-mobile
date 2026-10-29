@@ -1,0 +1,71 @@
+# Agents screen: list (subagent-only agents marked), create an agent with tools, model, and thinking level, reopen it,
+# and delete it after the confirmation alert. Rows read "<name>, <description>, <details>" and editor chips read their
+# label. Fields are tapped by placeholder: their labels also match the uppercase section headings, and tapping a
+# heading dismisses the keyboard. Expects the computer to have an agent named EXISTING and none named NEW_AGENT.
+# env: MACHINE_NAME, EXISTING, NEW_AGENT
+appId: com.heyskylark.ompmobile
+name: agents-manage
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Computer, ${MACHINE_NAME}, Online.*"
+    timeout: 30000
+- tapOn: "Computer, ${MACHINE_NAME}, Online.*"
+- tapOn: "Agents"
+- extendedWaitUntil:
+    visible: "${EXISTING}, .*"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: agents-01-list
+- tapOn: "New agent"
+- extendedWaitUntil:
+    visible: "e.g. writer"
+    timeout: 10000
+- tapOn: "e.g. writer"
+- inputText: "${NEW_AGENT}"
+- tapOn: "What this agent is for"
+- inputText: "Keeps notes"
+# The keyboard covers the lower chips, and Maestro would tap keys instead. Tapping plain text dismisses it
+# (`hideKeyboard` does not on this screen).
+- tapOn: "Shown when you pick an agent for a new session."
+- tapOn: "read"
+- tapOn: "grep"
+- tapOn: "@smol"
+- scrollUntilVisible:
+    element: "high"
+    direction: DOWN
+- tapOn: "high"
+- takeScreenshot: agents-02-editor
+- scrollUntilVisible:
+    element: ".*You are….*"
+    direction: DOWN
+- tapOn: ".*You are….*"
+- inputText: "Write short notes."
+- tapOn: "INSTRUCTIONS"
+- takeScreenshot: agents-03-editor-instructions
+- tapOn: "Save"
+- extendedWaitUntil:
+    visible: "${NEW_AGENT}, Keeps notes, 2 tools · @smol · Thinking high"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: agents-04-created
+- tapOn: "${NEW_AGENT}, .*"
+- extendedWaitUntil:
+    visible: "Keeps notes"
+    timeout: 10000
+- scrollUntilVisible:
+    element: ".*Delete agent.*"
+    direction: DOWN
+- takeScreenshot: agents-05-reopened
+- tapOn: ".*Delete agent.*"
+- extendedWaitUntil:
+    visible: "Delete ${NEW_AGENT}\\?"
+    timeout: 10000
+- takeScreenshot: agents-06-delete-confirm
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "${EXISTING}, .*"
+    timeout: 15000
+- assertNotVisible: "${NEW_AGENT}, .*"
+- waitForAnimationToEnd
+- takeScreenshot: agents-07-deleted
