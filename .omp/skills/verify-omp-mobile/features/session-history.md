@@ -37,23 +37,23 @@ Preconditions: app paired to this run's server.
 - Open, expand, and page:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/transcript -e 'OLDER_TEXT=.*<escaped older title>.*' .omp/skills/verify-omp-mobile/flows/transcript-expand-page.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/transcript -e 'OLDER_TEXT=.*<escaped older title>.*' .omp/skills/verify-omp-mobile/flows/transcript-expand-page.yaml
   ```
 
   Pass: `history-02-transcript` shows the transcript, `transcript-01-thought-expanded` shows `Thought ▴` with text matching the snapshot's newest thinking block, and `transcript-02-older-page` shows `<older title>`, which exists only in the older page.
 - **Anchored expansion and jump button:** from the same snapshot pick a finished tool card whose output is taller than the screen (about 2,000+ characters) as `<tool title>`, reopen the session, and run:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history-anchor -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/anchor -e 'TOOL_TITLE=<escaped tool title>' .omp/skills/verify-omp-mobile/flows/transcript-anchor.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/history-anchor -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<escaped title>' .omp/skills/verify-omp-mobile/flows/open-session.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/anchor -e 'TOOL_TITLE=<escaped tool title>' .omp/skills/verify-omp-mobile/flows/transcript-anchor.yaml
   ```
 
   Pass: the card header sits at the same height in `anchor-01-collapsed` and `anchor-02-expanded`, with `INPUT`/`OUTPUT` below it; `anchor-03-header-off-screen` shows only output; `anchor-04-collapsed-in-view` shows the collapsed card at the top of the transcript; `anchor-01` through `anchor-04` show the `Scroll to bottom` button above the composer, and `anchor-05-newest` shows the newest message without it.
 - **Back to the newest message on send:** browses to the scratch `project` and runs real model turns in a new session there (`<TOKEN>` is a fresh word):
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/follow -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<TOKEN> .omp/skills/verify-omp-mobile/flows/transcript-follow-send.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/follow -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<TOKEN> .omp/skills/verify-omp-mobile/flows/transcript-follow-send.yaml
   ```
 
   Pass: `follow-01-scrolled-away`, `follow-02-prompt-typed`, `follow-04-working-scrolled-away`, and `follow-05-steer-typed` show older numbers with the `Scroll to bottom` button; `follow-03-after-send` shows the sent prompt as the newest message and `follow-06-after-steer` the steer marked `Sent`, both without the button.
@@ -63,7 +63,7 @@ Preconditions: app paired to this run's server.
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/projects/recent' > <EVIDENCE>/search-api-projects.json
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=30&q=<typo query>' > <EVIDENCE>/search-api-query.json
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=30&project=<url-encoded cwd>' > <EVIDENCE>/search-api-project.json
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/search -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<typo query>' -e 'QUERY_TITLE=<escaped matching title>' -e 'OTHER_TITLE=<escaped first-screen title the query and chip both hide>' -e 'PROJECT_NAME=<chip label visible without scrolling the chip row>' -e 'PROJECT_TITLE=<escaped title in that project>' -e NO_MATCH=zzqxv .omp/skills/verify-omp-mobile/flows/session-search.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/search -e MACHINE_NAME=<MACHINE_NAME> -e 'QUERY=<typo query>' -e 'QUERY_TITLE=<escaped matching title>' -e 'OTHER_TITLE=<escaped first-screen title the query and chip both hide>' -e 'PROJECT_NAME=<chip label visible without scrolling the chip row>' -e 'PROJECT_TITLE=<escaped title in that project>' -e NO_MATCH=zzqxv .omp/skills/verify-omp-mobile/flows/session-search.yaml
   ```
 
   Pass: `search-01-list` shows the field and chips over the dated list, `search-02-query` only the API's matches for the typo, `search-03-project` only that project's sessions, `search-04-no-match` `No matching sessions`. For the cursor binding, take `nextCursor` from a small filtered page (`limit=2&project=…`) and reuse it with another `project` or `q`: `api.ts` exits 1 printing `HTTP 400: {"code":"invalid_cursor",…}`.

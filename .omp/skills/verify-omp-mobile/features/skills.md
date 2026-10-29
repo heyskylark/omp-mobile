@@ -15,7 +15,7 @@ Typing a `/skill:` command in the message field lists the skills OMP offers in t
 Preconditions: app paired to this run's server; a project skill in the scratch project, for example `<PROJECT>/.omp/skills/scratch-review/SKILL.md` with frontmatter `name: scratch-review` and a body telling the model to reply with one word; a user-level skill whose description contains `USER_QUERY`. Costs one small model turn.
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/skill-completion -e MACHINE_NAME=<MACHINE_NAME> -e PROJECT_SKILL=scratch-review -e PROJECT_QUERY=scrrev -e USER_SKILL=<user skill> -e USER_QUERY=<word from its description> .omp/skills/verify-omp-mobile/flows/skill-completion.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/skill-completion -e MACHINE_NAME=<MACHINE_NAME> -e PROJECT_SKILL=scratch-review -e PROJECT_QUERY=scrrev -e USER_SKILL=<user skill> -e USER_QUERY=<word from its description> .omp/skills/verify-omp-mobile/flows/skill-completion.yaml
 ```
 
 Screenshots `skill-01-slash-lists-all` … `skill-06-mid-prompt-completed`. Selectors: `Skill suggestions` (menu), `Skill <name>` (rows).

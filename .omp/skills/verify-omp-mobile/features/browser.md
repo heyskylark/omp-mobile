@@ -22,7 +22,7 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
 3. Run, with any session row of this computer as `SESSION` (a regex):
 
    ```sh
-   maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/browser-control -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION=<session row regex>' .omp/skills/verify-omp-mobile/flows/browser-control.yaml
+   MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/browser-control -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION=<session row regex>' .omp/skills/verify-omp-mobile/flows/browser-control.yaml
    ```
 
 4. Save the relay's output (`read proc://omp-mobile-verify-relay-<RUN_ID>`). It must show, in order, `Target.activateTarget`, three `Input.dispatchMouseEvent` at the frame's centre (`x` 600, `y` about 374 for the fixture's 1200x749 viewport), five single-character `Input.insertText` (`h`, `e`, `l`, `l`, `o`), `keyDown`/`keyUp` for `Backspace` and `Tab`, one `Input.insertText` with the pasteboard text, a click then a `clickCount` 2 click, `mousePressed` with `buttons` 1 then `mouseReleased`, and `CMD copy`. Set the pasteboard before the flow (`printf '<text>' | xcrun simctl pbcopy <SIM_UDID>`); afterwards `xcrun simctl pbpaste <SIM_UDID>` must print `Fake selection`.
@@ -32,7 +32,7 @@ The session header's `Browser` button (Safari symbol), and `Open browser` on a q
 Needs the relay (`omp browser-relay`) and a Chrome with the OMP Browser Relay extension, and **an unlocked Mac screen**. Chrome for Testing works without touching the user's Chrome: `"<omp puppeteer dir>/Google Chrome for Testing" --user-data-dir=<SCRATCH>/chrome --load-extension=$HOME/.omp/browser-relay/extension` (branded Chrome ignores `--load-extension`).
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/browser -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique lowercase word> -e "PROMPT=In the eval tool run: await browser.open({ name: 'check', url: 'file://<repo>/.omp/skills/verify-omp-mobile/fixtures/browser-page.html', app: { relay: true }, persist: true }). Then use the ask tool to ask me one question titled Sign in with the single option Done. After I answer, read the value of the #field input in tab check and reply with only that value." .omp/skills/verify-omp-mobile/flows/browser-live-view.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/browser -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique lowercase word> -e "PROMPT=In the eval tool run: await browser.open({ name: 'check', url: 'file://<repo>/.omp/skills/verify-omp-mobile/fixtures/browser-page.html', app: { relay: true }, persist: true }). Then use the ask tool to ask me one question titled Sign in with the single option Done. After I answer, read the value of the #field input in tab check and reply with only that value." .omp/skills/verify-omp-mobile/flows/browser-live-view.yaml
 ```
 
 The agent's reply must be `<TOKEN>`: the phone tapped the fixture's button (which focuses its field) and typed into the real page.

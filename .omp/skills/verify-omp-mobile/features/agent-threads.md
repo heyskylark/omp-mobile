@@ -24,8 +24,8 @@ Preconditions: app paired to this run's server.
 - Start a session whose agents run long enough to drive the UI (`SLEEP=90`), then walk the threads:
 
   ```sh
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/agents-new -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique word> -e SLEEP=90 .omp/skills/verify-omp-mobile/flows/new-session-agents.yaml
-  maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/agent-threads -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<unique word>.*' -e AGENT=Alpha -e NESTED=Gamma .omp/skills/verify-omp-mobile/flows/agent-threads.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/agents-new -e MACHINE_NAME=<MACHINE_NAME> -e TOKEN=<unique word> -e SLEEP=90 .omp/skills/verify-omp-mobile/flows/new-session-agents.yaml
+  MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/agent-threads -e MACHINE_NAME=<MACHINE_NAME> -e 'SESSION_TITLE=<unique word>.*' -e AGENT=Alpha -e NESTED=Gamma .omp/skills/verify-omp-mobile/flows/agent-threads.yaml
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions?limit=10' > <EVIDENCE>/agents-api-sessions.json
   .omp/skills/verify-omp-mobile/bin/api.ts <RUN_ID> get '/v1/sessions/<id>?limit=40' > <EVIDENCE>/agents-api-snapshot.json
   ```

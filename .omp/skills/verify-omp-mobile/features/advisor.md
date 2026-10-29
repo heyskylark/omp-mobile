@@ -16,7 +16,7 @@ The composer's `+` menu (`Composer menu`) has an **Advisor** switch below **Usag
 Preconditions: app paired to this run's server. Costs one small model turn plus one advisor review on the user's `advisor` role model.
 
 ```sh
-maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/advisor -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/advisor.yaml
+MAESTRO_OPTS=<MAESTRO_OPTS> maestro --device <SIM_UDID> test --test-output-dir <EVIDENCE>/maestro/advisor -e MACHINE_NAME=<MACHINE_NAME> -e 'PROMPT=Reply with the single word ready.' .omp/skills/verify-omp-mobile/flows/advisor.yaml
 ```
 
 Screenshots `advisor-01-menu-off` … `advisor-05-session-menu-off`. Selectors: `Composer menu`, `Advisor` (the switch row), `Close menu` (backdrop).
