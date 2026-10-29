@@ -17,6 +17,7 @@ import type {
 } from "@omp-mobile/protocol";
 import type { History } from "../history/api.ts";
 import type { AgentSignal } from "./agents.ts";
+import type { AgentStore } from "../agents/store.ts";
 
 /** Something the push layer should tell paired phones about. */
 export interface LiveNotification {
@@ -123,6 +124,8 @@ export interface LiveOptions {
 	relayPort: number;
 	/** Absolute path to the OMP extension file passed with `-e` to rpc-ui children. */
 	extensionPath: string;
+	/** The computer's agent definitions; sessions created with an `agent` start as it. */
+	agents: Pick<AgentStore, "get">;
 	/** Extra CLI arguments appended to rpc-ui children (models, approval mode, config overlays). */
 	rpcArgs?: string[];
 	/** Grace period before closing a settled, unsubscribed rpc child. Default 30 seconds. */

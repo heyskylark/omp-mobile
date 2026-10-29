@@ -3,6 +3,7 @@ import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import type { Job, JobStatus, ServerMessage } from "@omp-mobile/protocol";
+import { AgentBadge } from "../../../components/session-meta";
 import { EmptyState, ErrorState, Icon, Loading } from "../../../components/ui";
 import { useToast } from "../../../components/toast";
 import { OmpApi } from "../../../data/api";
@@ -198,9 +199,12 @@ function JobRow({
 			>
 				<View className={`mt-[7px] h-2.5 w-2.5 rounded-full ${job.status === "ACTIVE" ? "bg-success" : "bg-danger"}`} />
 				<View className="min-w-0 flex-1">
-					<Text numberOfLines={1} className="text-[16px] font-semibold text-primary">
-						{job.name}
-					</Text>
+					<View className="flex-row items-center gap-2">
+						<Text numberOfLines={1} className="shrink text-[16px] font-semibold text-primary">
+							{job.name}
+						</Text>
+						{job.agent ? <AgentBadge name={job.agent} /> : null}
+					</View>
 					<Text numberOfLines={1} className="mt-1 text-caption text-secondary">
 						<Text className="font-mono">{job.schedule}</Text>
 						{paused ? " · Paused" : job.nextRunAt ? ` · Next ${nextRunLabel(job.nextRunAt)}` : ""}

@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
+	AgentDefinition,
 	ImageAttachment,
 	ModelRole,
 	PendingInteraction,
@@ -11,6 +12,7 @@ import type {
 	SessionSummary,
 	TimelineItem,
 } from "@omp-mobile/protocol";
+import { AGENT_ENV, agentSnapshot } from "../agents/store.ts";
 import type { History, SessionMeta } from "../history/api.ts";
 import { imageBlocks } from "../history/images.ts";
 import { taskAgentIds } from "../history/jsonl.ts";
@@ -109,9 +111,15 @@ export class SessionActor {
 		prompt: string,
 		operationId: string,
 		images: ImageAttachment[],
-		{ modelRole = "default", advisor = false }: { modelRole?: ModelRole; advisor?: boolean } = {},
+		{
+			modelRole = "default",
+			advisor = false,
+			agent,
+		}: { modelRole?: ModelRole; advisor?: boolean; agent?: AgentDefinition } = {},
 	): Promise<void> {
 		if (this.sessionId) throw new Error("Actor already owns a session");
+		// OMP takes one model pattern; a fallback list in the agent file serves its `task` subagents.
+		const agentModel = agent?.model?.split(",")[0]?.trim();
 		const args = [
 			this.#opts.ompPath,
 			"--mode",
@@ -121,11 +129,30 @@ export class SessionActor {
 			"-e",
 			this.#opts.extensionPath,
 			...(this.#opts.rpcArgs ?? []),
+			// After `rpcArgs`, whose own `--model` would otherwise win.
+			...(agentModel ? ["--model", agentModel] : []),
+			...(agent?.thinkingLevel ? ["--thinking", agent.thinkingLevel] : []),
 		];
-		const rpc = new RpcSupervisor(args, this.meta.cwd);
+		// The extension records the snapshot in the new session and applies it whenever the session runs.
+		const rpc = new RpcSupervisor(
+			args,
+			this.meta.cwd,
+			agent ? { [AGENT_ENV]: JSON.stringify(agentSnapshot(agent)) } : undefined,
+		);
 		this.#rpc = rpc;
 		this.state = reduceOwnership(this.state, { type: "server.starting", pid: rpc.pid });
-		await rpc.ready();
+		// An agent's model pattern that OMP cannot resolve makes it exit at startup; `close` reports its stderr.
+		let starting = true;
+		const exitedEarly = rpc.exited.then(async (code) => {
+			if (!starting) return;
+			await rpc.close();
+			throw new Error(`omp exited with code ${code} while starting`);
+		});
+		try {
+			await Promise.race([rpc.ready(), exitedEarly]);
+		} finally {
+			starting = false;
+		}
 		const state = await rpc.command({ id: `state:${operationId}`, type: "get_state" }, 30_000);
 		if (
 			state.success !== true ||
@@ -140,7 +167,14 @@ export class SessionActor {
 			throw new Error("OMP did not report the new session identity");
 		}
 		this.sessionId = state.data.sessionId;
-		this.meta = { ...this.meta, id: state.data.sessionId, file: state.data.sessionFile };
+		this.meta = {
+			...this.meta,
+			id: state.data.sessionId,
+			file: state.data.sessionFile,
+			...(agent ? { agent: agent.name } : {}),
+		};
+		// An agent's own model replaces the phone's model role.
+		if (agentModel) modelRole = "default";
 		// A fresh OMP session already runs the default role with the advisor off.
 		try {
 			if (modelRole !== "default")
@@ -234,6 +268,7 @@ export class SessionActor {
 			liveness: this.liveness,
 			preview: this.meta.preview,
 			pendingCount: this.#pending.size,
+			...(this.meta.agent ? { agent: this.meta.agent } : {}),
 		};
 	}
 

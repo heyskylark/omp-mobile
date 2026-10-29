@@ -98,6 +98,24 @@ function firstUserText(prefix: string) {
 	}
 }
 
+/** Custom entry the OMP Mobile extension appends when a session starts as an agent; keep in sync with the extension. */
+const AGENT_ENTRY = "omp-mobile-agent";
+
+/**
+ * The extension records the agent when the session starts, before its first prompt, so the entry is among the file's
+ * first lines (OMP copies it into a moved session's new file too). A long agent prompt can run past the prefix; the
+ * name leads the entry's data.
+ */
+function sessionAgent(prefix: string) {
+	for (const line of prefix.split(/\r?\n/)) {
+		const value = parseLine(line);
+		if (value?.type !== "custom" || value.customType !== AGENT_ENTRY) continue;
+		const name = (value.data as Record<string, unknown> | undefined)?.name;
+		return typeof name === "string" ? name : undefined;
+	}
+	return /"customType"\s*:\s*"omp-mobile-agent"\s*,\s*"data"\s*:\s*\{\s*"name"\s*:\s*"([a-z0-9-]+)"/.exec(prefix)?.[1];
+}
+
 function lastAssistantText(suffix: string) {
 	const lines = suffix.split(/\r?\n/);
 	for (let index = lines.length - 1; index >= 0; index--) {
@@ -232,6 +250,7 @@ export class SessionCatalog {
 				const title = (explicit || first || "Untitled").replace(/\s+/g, " ").slice(0, 80);
 				const created = new Date(parsed.header.timestamp ?? (info.birthtimeMs || info.mtimeMs));
 				const preview = lastAssistantText(slices.suffix);
+				const agent = sessionAgent(slices.prefix);
 				session = {
 					meta: {
 						id: parsed.header.id,
@@ -242,6 +261,7 @@ export class SessionCatalog {
 						updatedAt: info.mtime.toISOString(),
 						status: statusFromSuffix(slices.suffix),
 						...(preview ? { preview } : {}),
+						...(agent ? { agent } : {}),
 					},
 					continuationOf: parsed.header.continuationOf,
 					lastTurnAt: lastTurnAt(slices.suffix) ?? created.getTime(),

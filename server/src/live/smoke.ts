@@ -166,6 +166,7 @@ const hub = createLiveHub({
 	history,
 	ompPath: "omp",
 	relayPort: 0,
+	agents: { get: async () => null },
 	extensionPath: join(import.meta.dir, "../../../extension/omp-mobile.ts"),
 	settleGraceMs: 250,
 	rpcArgs: [

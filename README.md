@@ -33,6 +33,7 @@ The menu bar screenshots use sample data.
 - **Questions and approvals.** When the agent uses the `ask` tool or needs a tool approval, the app shows it pinned above the composer, and a push notification lets you long-press to **Approve** or **Deny** without opening the app.
 - **Your browser.** When an OMP agent uses your own Chrome through the OMP Browser Relay, tap the Safari button in the session header, or **Open browser** on a question, to watch the tab it works in. Tap **Take control** to tap, scroll, and type in the tab yourself, for example to sign in when the agent asks you to, then tap **Hand back**. See [Let agents use your Chrome](#let-agents-use-your-chrome).
 - **New sessions from the phone.** Pick a recent project or browse folders on the computer, type a prompt, and the computer starts the session. Resume it later in your terminal with `omp --resume`.
+- **Start a session as an agent.** Pick one of the computer's agents when you start a session, so it runs with only that agent's tools and instructions, keeping the tools it does not need out of its context. Create, edit, and delete each computer's agents from the app. See [Agents](#agents).
 - **Scheduled jobs.** Ask OMP in any session to do something on a schedule, such as "every weekday at 9, summarize yesterday's commits". The agent calls the extension's `schedule_job` tool with a name, the prompt to send, and a cron schedule in the computer's time zone. Each time the schedule fires, the computer sends that prompt to the session as if you had typed it. If the session was deleted, the computer starts a new session in the same folder and later runs go there. Tap the clock button on a computer's session list to open **Jobs**. A green dot marks an active job. A red dot marks a paused job, or a job whose last run failed, with the reason underneath. A failed job keeps its schedule, and its next successful run clears the error. Swipe a job left to **Pause**, **Resume**, or **Delete** it, and tap it to open its session. Jobs run only while the server runs. Runs missed while the server was stopped are skipped.
 - **Terminal sessions too.** A session you started in a terminal can be driven from the phone at the same time, through OMP Collab over a relay that stays on your computer.
 - **A menu bar icon** on the Mac that shows the server's status and opens a QR code to pair a phone.
@@ -166,6 +167,37 @@ The Safari button appears in a session's header while the relay runs. The browse
 - Chrome draws a tab, and answers taps and typing in it, only while its window is on screen. **Take control** and **Bring to front** bring Chrome in front of other apps on the computer. While the computer's screen is locked or asleep, no Chrome draws anything, and the browser screen says **Chrome isn't drawing this tab** or keeps the last picture with a note that it is not updating. To use the browser while you are away, keep the computer's screen awake and unlocked.
 
 Anything that controls the relay can act on every site you are signed in to. The server connects to the relay only on the computer's loopback address and only while a paired phone has the browser screen open.
+
+## Agents
+
+An agent is one of OMP's own agent files on the computer, `~/.omp/agent/agents/<name>.md`: YAML frontmatter followed by the agent's instructions. These are the files OMP's `task` tool spawns subagents from, so an agent you create in the app is also a subagent OMP can use, and the other way around. Each computer keeps its own agents; nothing syncs between computers.
+
+```markdown
+---
+name: reviewer
+description: Reviews diffs without changing files.
+tools: read, grep, glob
+model: "@slow"
+thinking-level: high
+autoloadSkills:
+  - code-review
+---
+
+You review the current diff. Never edit files.
+```
+
+The app edits `description`, `tools`, `model` (an OMP model pattern or a role such as `@smol`), `thinking-level`, `autoloadSkills`, and the instructions. It keeps every other frontmatter key, such as `spawns` or `output`, as it is. Agent names are up to 64 lowercase letters, digits, and hyphens, and are the file names. The editor's tool list comes from a short-lived `omp --mode rpc` process that reports the tools a default OMP session on the computer starts with, cached for five minutes.
+
+A session started as an agent:
+
+- Uses only the agent's `tools`, plus the tools the OMP Mobile extension adds (`schedule_job`), so jobs keep working. An agent without `tools` keeps OMP's default tools.
+- Gets the agent's instructions appended to OMP's system prompt on every turn.
+- Starts with the agent's `model` and `thinking-level`, which replace the model role picked in the app. With a list of models, the session starts with the first. OMP records the model in the session, so it stays when the session is resumed.
+- Starts with the agent's `autoloadSkills` loaded, as OMP's subagents do.
+
+The agent is fixed for the session's lifetime. When the session starts, the extension records the agent's settings in the session file as an `omp-mobile-agent` entry, and applies that record whenever the session runs: under the server, or resumed in a terminal with `omp --resume`, as long as the extension is installed. Editing or deleting an agent changes only sessions started afterwards. Sessions started without an agent run as OMP's default setup, as before.
+
+The new-session picker hides agents that declare an `output:` schema. They return structured results to a parent agent and are meant for OMP's `task` tool; they still show in the app's agent list. A scheduled job created in an agent's session remembers the agent, and if the session is deleted, the replacement session starts as the same agent.
 
 ## Get the app on your iPhone with TestFlight
 
@@ -326,6 +358,7 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - Pairing codes are single-use and expire after 10 minutes. Device tokens are stored as SHA-256 hashes in `~/.omp-mobile/devices.json` with mode 0600.
 - Admin routes (used by the menu bar) and the extension endpoint exist only on the loopback listener and need tokens from `~/.omp-mobile/server.json`, which is also mode 0600.
 - Scheduled jobs live in `~/.omp-mobile/jobs.db`, a SQLite database with mode 0600. Only the extension endpoint creates jobs. Paired phones can list, pause, resume, and delete them.
+- Paired phones can create, edit, and delete the agent files in `~/.omp/agent/agents`, which also define OMP's `task` subagents on the computer. Agent names are restricted to lowercase letters, digits, and hyphens, so a phone cannot write outside that folder.
 - Folder browsing and new sessions are limited to the configured `roots`, checked after resolving symbolic links.
 
 ## Known limitations
@@ -341,5 +374,6 @@ The Simulator has no camera. To pair it, copy the pairing link from the menu bar
 - In a session the server runs, an `ask` call with several questions cannot finish a multiple-choice question from the phone. OMP's RPC mode offers no **Done** option there and expects the terminal's → key to move on, which RPC cannot send. Tapping options only toggles them; answer with **Other…** to continue. Sessions driven through Collab offer **Next →** and are not affected.
 - OMP does not forward images with a `/skill:` prompt, so images attached to one are dropped. Send them in a separate message.
 - OMP reports a task agent's description and current activity only while the agent runs, and the server keeps them in memory. After the server restarts, finished agents show no description, and an agent that is still running shows as **Interrupted** until OMP reports its progress again, within a few seconds.
+- An agent's `autoloadSkills` load from the skills OMP offers as `/skill:` commands, so they are skipped when OMP's `skills.enableSkillCommands` setting is off, and a skill missing on the computer is skipped without an error.
 - The browser screen shows nothing new while the computer's screen is locked or asleep, because Chrome stops drawing. Agents' own browser screenshots fail then too.
 - There is no Apple Watch app yet.

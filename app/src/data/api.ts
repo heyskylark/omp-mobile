@@ -1,6 +1,9 @@
 import type {
 	AdvisorRequest,
 	AdvisorResponse,
+	AgentDefinition,
+	AgentInput,
+	AgentListResponse,
 	AgentThreadSnapshot,
 	ApiError,
 	BrowserStatusResponse,
@@ -269,6 +272,23 @@ export class OmpApi {
 
 	deleteJob(id: string): Promise<void> {
 		return this.request(`/v1/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }, () => undefined);
+	}
+
+	agents() {
+		return this.request("/v1/agents", { method: "GET" }, typed<AgentListResponse>("agents", ["items", "tools"]));
+	}
+
+	/** Creates or replaces the computer's agent file `name`. */
+	saveAgent(name: string, input: AgentInput): Promise<AgentDefinition> {
+		return this.request(
+			`/v1/agents/${encodeURIComponent(name)}`,
+			{ method: "PUT", body: JSON.stringify(input) },
+			typed<AgentDefinition>("agent", ["name", "description", "prompt"]),
+		);
+	}
+
+	deleteAgent(name: string): Promise<void> {
+		return this.request(`/v1/agents/${encodeURIComponent(name)}`, { method: "DELETE" }, () => undefined);
 	}
 
 	registerPush(token: string, environment: "sandbox" | "production") {
