@@ -1,6 +1,6 @@
 import "../../global.css";
 import { useEffect } from "react";
-import { Stack, router } from "expo-router";
+import { Stack, useNavigationContainerRef } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -8,16 +8,23 @@ import { OmpNative } from "../../modules/omp-native";
 import { OverlayProvider } from "../components/overlay";
 import { ToastProvider, useToast } from "../components/toast";
 import { useMachines } from "../data/machines";
+import { openNotificationSession } from "../navigation";
 import type { NotificationOpen } from "../native/types";
 
 function NotificationBridge() {
 	const { show } = useToast();
+	const navigation = useNavigationContainerRef();
 	useEffect(() => {
-		const open = (notification: NotificationOpen) =>
-			router.push({
-				pathname: "/machine/[machineId]/session/[sessionId]",
-				params: { machineId: notification.machineId, sessionId: notification.sessionId },
+		const waiting = new Set<() => void>();
+		const open = (notification: NotificationOpen) => {
+			if (navigation.isReady()) return openNotificationSession(navigation, notification);
+			const unsubscribe = navigation.addListener("ready", () => {
+				unsubscribe();
+				waiting.delete(unsubscribe);
+				openNotificationSession(navigation, notification);
 			});
+			waiting.add(unsubscribe);
+		};
 		void OmpNative.consumeLaunchNotification().then((notification) => {
 			if (notification) open(notification);
 		});
@@ -31,8 +38,9 @@ function NotificationBridge() {
 		return () => {
 			openSubscription.remove();
 			actionSubscription.remove();
+			for (const unsubscribe of waiting) unsubscribe();
 		};
-	}, [show]);
+	}, [navigation, show]);
 	return null;
 }
 
